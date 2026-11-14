@@ -192,6 +192,23 @@ def test_panel_close_hides_instead_of_quitting(xdg):
     assert app.window.get_visible() is False
 
 
+def test_starting_a_capture_hides_the_panel(xdg, monkeypatch):
+    from chinchilla.ui import app as app_module
+
+    app, _provider = _app()
+    app.show_panel()
+    calls = []
+    monkeypatch.setattr(
+        app_module.GLib, "timeout_add", lambda delay, fn: calls.append((delay, fn)) or 0
+    )
+
+    app.start_capture()
+
+    assert app.window.get_visible() is False
+    assert app.status == ""
+    assert calls and calls[0][0] == app_module.CAPTURE_DELAY_MS
+
+
 def test_session_widgets_are_kept_between_turns(xdg):
     app, _provider = _app()
     _seed_capture(app)
@@ -218,8 +235,11 @@ def test_capture_falls_back_to_the_desktop_selector(xdg, monkeypatch):
         "grab_area",
         lambda: capture_module.Grab(image=Image.new("RGB", (30, 20)), backend="portal-area"),
     )
+    monkeypatch.setattr(app_module.permission, "ensure", lambda: (True, "granted"))
     monkeypatch.setattr(app_module.GLib, "idle_add", lambda fn, *args: fn(*args))
-    monkeypatch.setattr(app, "_run_area_selector", lambda: seen.setdefault("fallback", True) or False)
+    monkeypatch.setattr(
+        app, "_run_area_selector", lambda reason="": seen.setdefault("fallback", True) or False
+    )
 
     app._capture_worker()
 
@@ -229,3 +249,24 @@ def test_capture_falls_back_to_the_desktop_selector(xdg, monkeypatch):
     app._area_worker()
 
     assert len(app.session.captures) == 1
+
+
+def test_capture_skips_the_portal_without_the_screenshot_permission(xdg, monkeypatch):
+    from chinchilla.ui import app as app_module
+
+    app, _provider = _app()
+    seen = {}
+
+    def should_not_run(**kwargs):
+        raise AssertionError("the portal must not be called without permission")
+
+    monkeypatch.setattr(app_module.capture_module, "grab_screen", should_not_run)
+    monkeypatch.setattr(app_module.permission, "ensure", lambda: (False, "no permission store"))
+    monkeypatch.setattr(app_module.GLib, "idle_add", lambda fn, *args: fn(*args))
+    monkeypatch.setattr(
+        app, "_run_area_selector", lambda reason="": seen.setdefault("reason", reason) or False
+    )
+
+    app._capture_worker()
+
+    assert "no permission store" in seen["reason"]

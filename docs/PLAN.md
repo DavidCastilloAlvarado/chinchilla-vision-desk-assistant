@@ -79,6 +79,7 @@ Each step is implemented, verified, and committed to `main` on its own.
 | 9 | Settings UI and session selector | `settings --render`, `sessions list --render`, round-trip tests | done |
 | 10 | App: single instance, tray, shortcut install | `shortcuts install/status/uninstall`, `app --render`, daemon activation | done |
 | 11 | Docs: README, verification notes | full test suite + end-to-end run | done |
+| 12 | Silent capture: portal permission for the app id, own selector over the frozen frame | `permission` command, live screen capture of the running selector, pytest | done |
 
 ## Environment notes
 
@@ -87,7 +88,8 @@ Each step is implemented, verified, and committed to `main` on its own.
   X display is reachable). That gives the overlay a fullscreen, always-on-top
   window it can position itself, which plain Wayland toplevels cannot do.
 - Screenshot capture goes through a chain of backends, see
-  [`docs/CAPTURE.md`](CAPTURE.md). The XDG portal may require a one-time
-  permission prompt; `chinchilla doctor` reports what works.
+  [`docs/CAPTURE.md`](CAPTURE.md). The silent frame needs the portal's
+  `screenshot` permission for this process' app id; the app records it once
+  (`chinchilla permission`), and `chinchilla doctor` reports the state.
 - The global shortcut is a GNOME custom keybinding created by
   `chinchilla shortcuts install` (`Ctrl+Alt+A`).

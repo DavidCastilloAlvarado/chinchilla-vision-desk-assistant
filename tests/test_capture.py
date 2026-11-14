@@ -60,8 +60,14 @@ def test_grab_screen_reports_what_went_wrong(tmp_path, monkeypatch):
     assert "no capture backend" in str(error.value)
 
 
-def test_preferred_backend_is_tried_first(sample):
+def test_preferred_backend_is_tried_first(sample, monkeypatch):
+    def refuse(*_args, **_kwargs):
+        raise capture.CaptureError("portal refused the screenshot")
+
+    monkeypatch.setattr(capture, "_portal_screenshot", refuse)
+
     grab = capture.grab_screen(preferred="portal")
+
     assert grab.backend == "file"
 
 

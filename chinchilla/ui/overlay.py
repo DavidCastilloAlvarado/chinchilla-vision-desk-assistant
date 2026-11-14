@@ -9,7 +9,7 @@ from typing import Callable
 import cairo
 from PIL import Image
 
-from .gtk import Gdk, GLib, Gtk
+from .gtk import Gdk, GdkPixbuf, GLib, Gtk
 
 from ..core.geometry import Rect, clamp, from_points, is_usable, nudge
 from . import paint, theme
@@ -30,17 +30,11 @@ class SelectionOverlay(Gtk.Window):
     ) -> None:
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
         self.set_decorated(False)
-        self.set_app_paintable(True)
         self.set_skip_taskbar_hint(True)
         self.set_skip_pager_hint(True)
         self.set_type_hint(Gdk.WindowTypeHint.DOCK)
         self.set_keep_above(True)
         self.set_can_focus(True)
-
-        screen = self.get_screen()
-        visual = screen.get_rgba_visual()
-        if visual is not None:
-            self.set_visual(visual)
 
         display = Gdk.Display.get_default()
         monitor = display.get_primary_monitor() or display.get_monitor(0)
@@ -52,9 +46,27 @@ class SelectionOverlay(Gtk.Window):
         self._surface = None
         self._surface_data = None
         self._bg_size = (0, 0)
+        # GTK has no cairo paint context without python3-gi-cairo, so the frame
+        # is drawn into a cairo surface and handed to the window as a pixbuf.
+        # Cairo stores pixels as BGRA and the pixbuf reads RGBA, so the live
+        # frame is drawn with the red and blue channels swapped: that keeps the
+        # colours right without copying eight megabytes on every mouse move.
+        self._bgr = True
         if background is not None:
-            self._surface, self._surface_data = paint.surface_from_image(background)
+            self._surface, self._surface_data = paint.surface_from_image(
+                self._swapped(background) if self._bgr else background
+            )
             self._bg_size = (background.width, background.height)
+
+        self._image = Gtk.Image()
+        self._image.set_halign(Gtk.Align.FILL)
+        self._image.set_valign(Gtk.Align.FILL)
+        self.add(self._image)
+        self._pending = False
+        self._frame = None
+        self._frame_bytes = b""
+        self._frame_gbytes = None
+        self._frame_pixbuf = None
 
         self._on_complete = on_complete
         self._on_cancel = on_cancel
@@ -73,16 +85,30 @@ class SelectionOverlay(Gtk.Window):
             | Gdk.EventMask.STRUCTURE_MASK
             | Gdk.EventMask.ENTER_NOTIFY_MASK
         )
-        self.connect("draw", self._on_draw)
         self.connect("button-press-event", self._on_button_press)
         self.connect("button-release-event", self._on_button_release)
         self.connect("motion-notify-event", self._on_motion)
         self.connect("key-press-event", self._on_key)
 
+    # ------------------------------------------------------------------ colour
+
+    @staticmethod
+    def _swapped(image: Image.Image) -> Image.Image:
+        red, green, blue = image.convert("RGB").split()
+        return Image.merge("RGB", (blue, green, red))
+
+    def _color(self, red: float, green: float, blue: float, alpha: float | None = None):
+        if self._bgr:
+            red, blue = blue, red
+        if alpha is None:
+            return (red, green, blue)
+        return (red, green, blue, alpha)
+
     # ------------------------------------------------------------------ window
 
     def start(self) -> None:
         self.move(self._screen.x, self._screen.y)
+        self._repaint()
         self.show_all()
         self.fullscreen()
         self.present()
@@ -141,14 +167,14 @@ class SelectionOverlay(Gtk.Window):
             return False
         self._origin = (int(event.x), int(event.y))
         self._rect = Rect(int(event.x), int(event.y), 0, 0)
-        self.queue_draw()
+        self._invalidate()
         return True
 
     def _on_motion(self, _widget, event) -> bool:
         self._cursor = (int(event.x), int(event.y))
         if self._origin is not None:
             self._rect = from_points(*self._origin, int(event.x), int(event.y), self._bounds())
-        self.queue_draw()
+        self._invalidate()
         return True
 
     def _on_button_release(self, _widget, event) -> bool:
@@ -160,7 +186,7 @@ class SelectionOverlay(Gtk.Window):
             self.finish(rect)
         else:
             self._rect = None
-            self.queue_draw()
+            self._invalidate()
         return True
 
     def _on_key(self, _widget, event) -> bool:
@@ -175,7 +201,7 @@ class SelectionOverlay(Gtk.Window):
         if key == Gdk.KEY_BackSpace:
             self._rect = None
             self._origin = None
-            self.queue_draw()
+            self._invalidate()
             return True
         step = 10 if event.state & Gdk.ModifierType.SHIFT_MASK else 1
         deltas = {
@@ -189,25 +215,51 @@ class SelectionOverlay(Gtk.Window):
                 self._rect = Rect(0, 0, 0, 0)
             width, height = self._bounds()
             self._rect = nudge(self._rect, *deltas[key], width, height)
-            self.queue_draw()
+            self._invalidate()
             return True
         return False
 
     # ----------------------------------------------------------------- drawing
 
-    def _on_draw(self, _widget, cr) -> bool:
-        allocation = self.get_allocation()
-        self.render(cr, allocation.width, allocation.height)
-        return True
+    def _invalidate(self) -> None:
+        """Coalesces repaints: motion events are much faster than full redraws."""
+        if self._pending:
+            return
+        self._pending = True
+        GLib.idle_add(self._repaint)
+
+    def _repaint(self) -> bool:
+        self._pending = False
+        width, height = self._screen.width, self._screen.height
+        if self._frame is None:
+            self._frame = cairo.ImageSurface(cairo.FORMAT_RGB24, width, height)
+        cr = cairo.Context(self._frame)
+        self.render(cr, width, height)
+        self._frame.flush()
+        # the pixbuf borrows the buffer instead of copying it, so both the
+        # bytes and the GBytes have to outlive the call
+        self._frame_bytes = bytes(self._frame.get_data())
+        self._frame_gbytes = GLib.Bytes.new(self._frame_bytes)
+        self._frame_pixbuf = GdkPixbuf.Pixbuf.new_from_bytes(
+            self._frame_gbytes,
+            GdkPixbuf.Colorspace.RGB,
+            True,  # four channels keeps the data byte aligned with the surface
+            8,
+            width,
+            height,
+            self._frame.get_stride(),
+        )
+        self._image.set_from_pixbuf(self._frame_pixbuf)
+        return False
 
     def render(self, cr, width: int, height: int) -> None:
-        """Draw the whole overlay; shared by the draw signal and snapshots."""
-        cr.set_operator(1)  # OVER
+        """Draw the whole overlay; shared by the live window and snapshots."""
+        cr.set_operator(cairo.OPERATOR_OVER)
         self._paint_background(cr, width, height)
 
         rect = self._rect
         if rect is None or not is_usable(rect):
-            cr.set_source_rgba(*VEIL)
+            cr.set_source_rgba(*self._color(*VEIL))
             cr.paint()
         else:
             self._paint_veil_around(cr, rect, width, height)
@@ -219,15 +271,21 @@ class SelectionOverlay(Gtk.Window):
     def render_to_png(self, path: str | Path) -> Path:
         from .snapshot import render_cairo
 
-        return render_cairo(
-            self.render, path, self._screen.width, self._screen.height
-        )
+        previous, self._bgr = self._bgr, False
+        try:
+            return render_cairo(
+                self.render, path, self._screen.width, self._screen.height
+            )
+        finally:
+            self._bgr = previous
 
     def _paint_background(self, cr, width: int | None = None, height: int | None = None) -> None:
-        if self._surface is None:
-            return
         width = width or self._screen.width
         height = height or self._screen.height
+        if self._surface is None:
+            cr.set_source_rgb(*self._color(0.06, 0.07, 0.09)[:3])
+            cr.paint()
+            return
         cr.save()
         cr.scale(width / self._bg_size[0], height / self._bg_size[1])
         cr.set_source_surface(self._surface, 0, 0)
@@ -235,7 +293,7 @@ class SelectionOverlay(Gtk.Window):
         cr.restore()
 
     def _paint_veil_around(self, cr, rect: Rect, width: int, height: int) -> None:
-        cr.set_source_rgba(*VEIL)
+        cr.set_source_rgba(*self._color(*VEIL))
         for x, y, w, h in (
             (0, 0, width, rect.y),
             (0, rect.bottom, width, height - rect.bottom),
@@ -247,26 +305,19 @@ class SelectionOverlay(Gtk.Window):
         cr.fill()
 
     def _paint_selection(self, cr, rect: Rect, width: int, height: int) -> None:
-        cr.set_source_rgba(*theme.ACCENT)
+        cr.set_source_rgba(*self._color(*theme.ACCENT))
         cr.set_line_width(2)
         cr.rectangle(rect.x + 0.5, rect.y + 0.5, rect.width, rect.height)
         cr.stroke()
 
-        cr.set_line_width(4)
-        handle = 14
-        for cx, cy, dx, dy in (
-            (rect.x, rect.y, 1, 1),
-            (rect.right, rect.y, -1, 1),
-            (rect.x, rect.bottom, 1, -1),
-            (rect.right, rect.bottom, -1, -1),
-        ):
-            cr.move_to(cx, cy)
-            cr.line_to(cx + dx * handle, cy)
-            cr.move_to(cx, cy)
-            cr.line_to(cx, cy + dy * handle)
+        cr.set_source_rgba(*self._color(1, 1, 1, 0.22))
+        cr.set_line_width(1)
+        cr.rectangle(rect.x + 1.5, rect.y + 1.5, rect.width - 1, rect.height - 1)
         cr.stroke()
 
-        cr.set_source_rgba(1, 1, 1, 0.18)
+        self._paint_handles(cr, rect)
+
+        cr.set_source_rgba(*self._color(1, 1, 1, 0.18))
         cr.set_line_width(1)
         cr.set_dash([4, 4], 0)
         cr.move_to(self._cursor[0], 0)
@@ -278,6 +329,28 @@ class SelectionOverlay(Gtk.Window):
 
         self._paint_badge(cr, rect, width)
 
+    def _paint_handles(self, cr, rect: Rect) -> None:
+        """Round grips on the corners and edge midpoints, like the GNOME picker."""
+        radius = 4.0
+        points = [
+            (rect.x, rect.y),
+            (rect.x + rect.width / 2, rect.y),
+            (rect.right, rect.y),
+            (rect.right, rect.y + rect.height / 2),
+            (rect.right, rect.bottom),
+            (rect.x + rect.width / 2, rect.bottom),
+            (rect.x, rect.bottom),
+            (rect.x, rect.y + rect.height / 2),
+        ]
+        for cx, cy in points:
+            cr.set_source_rgba(*self._color(0.98, 0.98, 0.96, 0.95))
+            cr.arc(cx, cy, radius, 0, 2 * 3.141592653589793)
+            cr.fill()
+            cr.set_source_rgba(*self._color(*theme.ACCENT))
+            cr.set_line_width(1.5)
+            cr.arc(cx, cy, radius, 0, 2 * 3.141592653589793)
+            cr.stroke()
+
     def _paint_badge(self, cr, rect: Rect, width: int) -> None:
         text = f"{rect.width} x {rect.height}"
         tw, th = paint.text_size(text, 12, bold=True)
@@ -287,11 +360,11 @@ class SelectionOverlay(Gtk.Window):
         by = rect.y - bh - 6
         if by < 0:
             by = rect.y + 6
-        cr.set_source_rgba(*theme.ACCENT)
+        cr.set_source_rgba(*self._color(*theme.ACCENT))
         cr.rectangle(bx, by, bw, bh)
         cr.fill()
         paint.draw_text(
-            cr, text, bx + pad / 2, by + (bh - th) / 2, 12, (0.09, 0.08, 0.05), True
+            cr, text, bx + pad / 2, by + (bh - th) / 2, 12, self._color(0.09, 0.08, 0.05)[:3], True
         )
 
     def _paint_hint(self, cr, width: int, height: int) -> None:
@@ -301,11 +374,11 @@ class SelectionOverlay(Gtk.Window):
         pad = 12
         bx = (width - tw) / 2 - pad
         by = 24.0
-        cr.set_source_rgba(0.06, 0.07, 0.09, 0.82)
+        cr.set_source_rgba(*self._color(0.06, 0.07, 0.09, 0.82))
         cr.rectangle(bx, by, tw + pad * 2, th + pad)
         cr.fill()
         paint.draw_text(
-            cr, self._hint, bx + pad / 2, by + (th + pad - th) / 2, 11, (0.92, 0.90, 0.86)
+            cr, self._hint, bx + pad / 2, by + (th + pad - th) / 2, 11, self._color(0.92, 0.90, 0.86)[:3]
         )
         del height
 
@@ -329,11 +402,11 @@ class SelectionOverlay(Gtk.Window):
         cr.paint()
         cr.restore()
 
-        cr.set_source_rgba(*theme.ACCENT)
+        cr.set_source_rgba(*self._color(*theme.ACCENT))
         cr.set_line_width(1.5)
         cr.rectangle(bx + 0.5, by + 0.5, size, size)
         cr.stroke()
-        cr.set_source_rgba(1, 1, 1, 0.7)
+        cr.set_source_rgba(*self._color(1, 1, 1, 0.7))
         cr.move_to(bx + size / 2 - 8, by + size / 2)
         cr.line_to(bx + size / 2 + 8, by + size / 2)
         cr.move_to(bx + size / 2, by + size / 2 - 8)
@@ -346,7 +419,7 @@ class SelectionOverlay(Gtk.Window):
         """Select a rect programmatically, used by the snapshot harness."""
         self._rect = clamp(rect, *self._bounds())
         self._cursor = (self._rect.right, self._rect.bottom)
-        self.queue_draw()
+        self._invalidate()
 
     def complete_for_test(self) -> None:
         if self._rect is not None and is_usable(self._rect):

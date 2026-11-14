@@ -50,12 +50,35 @@ chinchilla sessions list         # stored conversations
 chinchilla doctor                # environment, provider, capture and shortcut state
 ```
 
-The first grab asks GNOME for permission with a **Share** dialog; accept it and
-the panel opens on the desktop's own selector. If the silent grab is not
-allowed, Chinchilla falls back to the GNOME area selector.
-
 Inside the panel: `Ctrl+R` adds another cut, `Ctrl+N` starts a session,
 `Ctrl+S` opens the session selector, `Ctrl+W` toggles web search, `Esc` hides.
+
+### The capture flow
+
+1. `Ctrl+Alt+A` hides the panel and takes a silent full-screen frame through
+   the XDG portal (`xdg-desktop-portal` asks for the *screenshot* permission
+   once; Chinchilla records the grant itself, see below).
+2. Chinchilla's own selector opens over that frozen frame: everything outside
+   the drag is dimmed, the selection stays bright, with a border, round grips
+   on the corners and edge midpoints, a size badge and a loupe.
+   `Enter` confirms, `Esc` cancels, the arrow keys nudge (`Shift` = 10 px).
+3. The region is cropped, added to the session and the panel comes back.
+
+No desktop selector and no shutter sound are involved. If the portal refuses
+the silent grab (no permission store, another desktop), Chinchilla falls back
+to the desktop's own area picker and says so in the panel status.
+
+#### The screenshot permission
+
+GNOME only answers a non-interactive screenshot for an app id that already owns
+the `screenshot` permission, and it derives that id from the systemd scope the
+process runs in. `chinchilla permission` shows the state, and the app grants
+itself once (for its own id only) so the hotkey never opens a dialog:
+
+```bash
+chinchilla permission            # granted (app id 'com.example.Terminal')
+chinchilla permission revoke     # ask the desktop again on the next capture
+```
 
 ### Web search
 
@@ -103,7 +126,13 @@ shown under the answer and cited in the text.
   XWayland so the overlay can be a fullscreen, always-on-top window it can
   position itself; plain Wayland toplevels cannot do that.
 - Screen capture walks a backend chain (see [`docs/CAPTURE.md`](docs/CAPTURE.md)).
-  The XDG portal shows a permission dialog the first time; grant it once.
+  The silent screenshot needs the portal permission; Chinchilla grants it for
+  its own app id and `chinchilla permission revoke` takes it back.
+- GTK here has no cairo paint context (`python3-gi-cairo` is not installed on
+  every host), so the selector draws each frame into a cairo image surface and
+  hands it to a `Gtk.Image` as a pixbuf. The live frame is drawn with red and
+  blue swapped because cairo stores pixels as BGRA while the pixbuf reads RGBA;
+  `render_to_png` turns the swap off.
 - GNOME 46 ignores `Gtk.StatusIcon` unless an extension is installed, so the
   tray falls back to an AppIndicator when one is available; without either the
   shortcut and the CLI keep working.

@@ -9,6 +9,7 @@ from typing import Callable
 
 from .. import log, paths, shortcuts
 from ..core import capture as capture_module
+from ..core import permission
 from ..core.agent import Agent, AgentEvent
 from ..core.thread import Turn
 from ..store import config, session as session_store
@@ -19,7 +20,7 @@ from .gtk import Gdk, GLib, Gtk
 LOGGER = log.get("app")
 APP_ID = "io.github.chinchilla.App"
 PUMP_MS = 60
-CAPTURE_DELAY_MS = 450
+CAPTURE_DELAY_MS = 220
 _DONE = AgentEvent("done")
 
 
@@ -148,33 +149,34 @@ class App(Gtk.Application):
 
     def start_capture(self) -> None:
         if self.busy:
+            self.show_panel()
             self._status("wait for the current answer", "error")
             return
-        self.show_panel()
-        self._status("asking for the screen")
-        # GNOME refuses the screenshot access dialog unless the calling app owns
-        # the focused window, so let the panel settle before hitting the portal.
+        # The panel would end up in the frozen frame, so it steps aside while
+        # the region is picked.
+        self.hide_panel()
+        self.status = ""
         GLib.timeout_add(CAPTURE_DELAY_MS, self._spawn_capture_worker)
 
     def _spawn_capture_worker(self) -> bool:
         self.capture_parent = self.panel_handle()
-        LOGGER.info(
-            "capture start active=%s focus=%s handle=%r",
-            self.window.is_active() if self.window else None,
-            self.window.has_toplevel_focus() if self.window else None,
-            self.capture_parent,
-        )
+        LOGGER.info("capture start handle=%r", self.capture_parent)
         threading.Thread(target=self._capture_worker, daemon=True).start()
         return False
 
     def _capture_worker(self) -> None:
-        parent = self.capture_parent
+        allowed, detail = permission.ensure()
+        if not allowed:
+            LOGGER.warning("silent capture unavailable: %s", detail)
+            GLib.idle_add(self._run_area_selector, detail)
+            return
         try:
-            grab = capture_module.grab_screen(parent=parent)
+            grab = capture_module.grab_screen(parent=self.capture_parent)
         except capture_module.CaptureError as exc:
             LOGGER.warning("screen grab failed: %s", exc)
-            GLib.idle_add(self._run_area_selector)
+            GLib.idle_add(self._run_area_selector, str(exc))
             return
+        LOGGER.info("silent grab %sx%s via %s", grab.image.width, grab.image.height, grab.backend)
         GLib.idle_add(self._run_overlay, grab.image)
 
     def panel_handle(self) -> str:
@@ -182,8 +184,11 @@ class App(Gtk.Application):
             return ""
         return self.window.parent_handle()
 
-    def _run_area_selector(self) -> bool:
+    def _run_area_selector(self, reason: str = "") -> bool:
         """Fallback: let the desktop draw its own selector, like macOS does."""
+        self.show_panel()
+        if reason:
+            LOGGER.info("area selector fallback: %s", reason)
         self._status("drag the area to capture in the GNOME selector")
         threading.Thread(target=self._area_worker, daemon=True).start()
         return False
@@ -193,6 +198,7 @@ class App(Gtk.Application):
             grab = capture_module.grab_area()
         except capture_module.CaptureError as exc:
             GLib.idle_add(self._status, f"capture failed: {exc}", "error")
+            GLib.idle_add(self.show_panel)
             return
         LOGGER.info("area selector returned %sx%s", grab.image.width, grab.image.height)
         GLib.idle_add(self.add_capture, grab.image)
@@ -203,11 +209,13 @@ class App(Gtk.Application):
         rect = run_overlay(background=image)
         if rect is None:
             self._status("capture cancelled")
+            self.show_panel()
             return False
         try:
             cropped = capture_module.crop(image, rect, (image.width, image.height))
         except Exception as exc:
             self._status(f"cannot crop: {exc}", "error")
+            self.show_panel()
             return False
         self.add_capture(cropped, rect)
         return False

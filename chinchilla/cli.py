@@ -84,6 +84,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     web_ok, web_detail = search.probe_server(settings)
     results.append(_check("websearch", web_detail, web_ok))
 
+    from .core import permission
+
+    # informational: the app grants itself on the first capture
+    results.append(_check("screenshot", permission.describe(), True))
+
     from . import shortcuts
 
     shortcut = shortcuts.status()
@@ -163,6 +168,11 @@ def cmd_capture(args: argparse.Namespace) -> int:
             grab = capture.grab_area(args.backend)
             image, rect, screen_size = grab.image, None, None
         else:
+            from .core import permission
+
+            allowed, detail = permission.ensure()
+            if not allowed:
+                print(f"silent screenshot unavailable: {detail}", file=sys.stderr)
             try:
                 grab = capture.grab_screen(args.backend)
             except capture.CaptureError:
@@ -400,6 +410,21 @@ def cmd_shortcuts(args: argparse.Namespace) -> int:
     return 0 if (status.installed or args.action == "uninstall") else 1
 
 
+def cmd_permission(args: argparse.Namespace) -> int:
+    from .core import permission
+
+    if args.action == "grant":
+        ok = permission.grant()
+        print(permission.describe())
+        return 0 if ok else 1
+    if args.action == "revoke":
+        ok = permission.revoke()
+        print(permission.describe())
+        return 0 if ok else 1
+    print(permission.describe())
+    return 0 if permission.is_granted() else 1
+
+
 def cmd_panel(args: argparse.Namespace) -> int:
     from .runtime import ensure_gdk_backend
 
@@ -483,6 +508,14 @@ def build_parser() -> argparse.ArgumentParser:
     shortcuts_parser.add_argument("--binding", default=DEFAULT_BINDING, help="accelerator to bind")
     shortcuts_parser.add_argument("--command", help="command to run (defaults to this installation)")
     shortcuts_parser.set_defaults(func=cmd_shortcuts)
+
+    permission_parser = sub.add_parser(
+        "permission", help="show, grant or revoke the silent screenshot permission"
+    )
+    permission_parser.add_argument(
+        "action", nargs="?", choices=["status", "grant", "revoke"], default="status"
+    )
+    permission_parser.set_defaults(func=cmd_permission)
 
     settings_parser = sub.add_parser("settings", help="open the settings dialog")
     settings_parser.add_argument("--render", help="render the dialog to a PNG and exit")
