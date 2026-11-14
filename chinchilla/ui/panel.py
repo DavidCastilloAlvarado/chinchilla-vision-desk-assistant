@@ -565,6 +565,17 @@ class PanelWindow(Gtk.Window):
         self.resize(PANEL_WIDTH, height)
         self.move(max(0, screen_width - PANEL_WIDTH - margin), max(0, (screen_height - height) // 2))
 
+    def parent_handle(self) -> str:
+        """X11 handle for the portal, so it can attach its dialog to the panel."""
+        window = self.get_window()
+        if window is None:
+            return ""
+        try:
+            xid = window.get_xid()
+        except (AttributeError, TypeError):
+            return ""
+        return f"x11:{xid:#x}" if xid else ""
+
     def show_at(self, screen_width: int, screen_height: int) -> None:
         self.place(screen_width, screen_height)
         self.show_all()

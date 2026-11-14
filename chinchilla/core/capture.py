@@ -107,7 +107,22 @@ def _run(command: list[str], path_hint: str | None = None) -> Image.Image:
 # ---------------------------------------------------------------------- portal
 
 
-def _portal_screenshot(interactive: bool = False, timeout: float = PORTAL_TIMEOUT) -> Path:
+_parent_window = ""
+
+
+def set_parent_window(handle: str | None) -> None:
+    """Remembers the X11 handle the portal should parent its dialog to."""
+    global _parent_window
+    _parent_window = handle or ""
+
+
+def parent_window() -> str:
+    return _parent_window
+
+
+def _portal_screenshot(
+    interactive: bool = False, timeout: float = PORTAL_TIMEOUT, parent: str = ""
+) -> Path:
     Gio, GLib = _gi()
     from gi.repository import GLib as _GLib
 
@@ -147,7 +162,7 @@ def _portal_screenshot(interactive: bool = False, timeout: float = PORTAL_TIMEOU
             PORTAL_PATH,
             "org.freedesktop.portal.Screenshot",
             "Screenshot",
-            _GLib.Variant("(sa{sv})", ("", options)),
+            _GLib.Variant("(sa{sv})", (parent or _parent_window, options)),
             None,
             Gio.DBusCallFlags.NONE,
             5000,
@@ -345,8 +360,14 @@ def available_backends(kind: str | None = None) -> list[Backend]:
     return result
 
 
-def grab_screen(preferred: str | None = None) -> Grab:
-    """Full screen image from the first backend that works."""
+def grab_screen(preferred: str | None = None, parent: str | None = None) -> Grab:
+    """Full screen image from the first backend that works.
+
+    `parent` is the X11 handle of the window asking for the grab: the portal
+    attaches its permission dialog to it, which GNOME requires before it lets
+    the dialog appear.
+    """
+    set_parent_window(parent)
     candidates = available_backends("screen")
     if preferred:
         candidates.sort(key=lambda backend: backend.id != preferred)

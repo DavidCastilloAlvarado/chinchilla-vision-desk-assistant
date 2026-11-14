@@ -51,6 +51,7 @@ class App(Gtk.Application):
         self.events: queue.Queue[AgentEvent] = queue.Queue()
         self.busy = False
         self.status = ""
+        self.capture_parent = ""
 
     # ------------------------------------------------------------ application
 
@@ -156,16 +157,39 @@ class App(Gtk.Application):
         GLib.timeout_add(CAPTURE_DELAY_MS, self._spawn_capture_worker)
 
     def _spawn_capture_worker(self) -> bool:
+        self.capture_parent = self.panel_handle()
         threading.Thread(target=self._capture_worker, daemon=True).start()
         return False
 
     def _capture_worker(self) -> None:
+        parent = self.capture_parent
         try:
-            grab = capture_module.grab_screen()
+            grab = capture_module.grab_screen(parent=parent)
+        except capture_module.CaptureError as exc:
+            LOGGER.warning("screen grab failed: %s", exc)
+            GLib.idle_add(self._run_area_selector)
+            return
+        GLib.idle_add(self._run_overlay, grab.image)
+
+    def panel_handle(self) -> str:
+        if self.window is None:
+            return ""
+        return self.window.parent_handle()
+
+    def _run_area_selector(self) -> bool:
+        """Fallback: let the desktop draw its own selector, like macOS does."""
+        self._status("no silent grab; using the desktop selector")
+        threading.Thread(target=self._area_worker, daemon=True).start()
+        return False
+
+    def _area_worker(self) -> None:
+        try:
+            grab = capture_module.grab_area()
         except capture_module.CaptureError as exc:
             GLib.idle_add(self._status, f"capture failed: {exc}", "error")
             return
-        GLib.idle_add(self._run_overlay, grab.image)
+        LOGGER.info("area selector returned %sx%s", grab.image.width, grab.image.height)
+        GLib.idle_add(self.add_capture, grab.image)
 
     def _run_overlay(self, image) -> bool:
         from .overlay import run_overlay

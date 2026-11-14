@@ -63,3 +63,11 @@ def test_grab_screen_reports_what_went_wrong(tmp_path, monkeypatch):
 def test_preferred_backend_is_tried_first(sample):
     grab = capture.grab_screen(preferred="portal")
     assert grab.backend == "file"
+
+
+def test_grab_screen_remembers_the_parent_window(sample):
+    capture.grab_screen(parent="x11:0x4a00007")
+
+    assert capture.parent_window() == "x11:0x4a00007"
+    capture.set_parent_window(None)
+    assert capture.parent_window() == ""

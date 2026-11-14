@@ -50,6 +50,10 @@ chinchilla sessions list         # stored conversations
 chinchilla doctor                # environment, provider, capture and shortcut state
 ```
 
+The first grab asks GNOME for permission with a **Share** dialog; accept it and
+the panel opens on the desktop's own selector. If the silent grab is not
+allowed, Chinchilla falls back to the GNOME area selector.
+
 Inside the panel: `Ctrl+R` adds another cut, `Ctrl+N` starts a session,
 `Ctrl+S` opens the session selector, `Ctrl+W` toggles web search, `Esc` hides.
 

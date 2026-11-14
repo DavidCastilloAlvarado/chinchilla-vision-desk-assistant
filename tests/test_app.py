@@ -199,3 +199,33 @@ def test_session_widgets_are_kept_between_turns(xdg):
     _drain(app)
 
     assert app.window.content.title_label.get_text() == app.session.title
+
+def test_capture_falls_back_to_the_desktop_selector(xdg, monkeypatch):
+    from chinchilla.core import capture as capture_module
+    from chinchilla.ui import app as app_module
+
+    app, _provider = _app()
+    app.capture_parent = "x11:0x1"
+    seen = {}
+
+    def boom(parent=None):
+        seen["parent"] = parent
+        raise capture_module.CaptureError("portal refused")
+
+    monkeypatch.setattr(capture_module, "grab_screen", boom)
+    monkeypatch.setattr(
+        capture_module,
+        "grab_area",
+        lambda: capture_module.Grab(image=Image.new("RGB", (30, 20)), backend="portal-area"),
+    )
+    monkeypatch.setattr(app_module.GLib, "idle_add", lambda fn, *args: fn(*args))
+    monkeypatch.setattr(app, "_run_area_selector", lambda: seen.setdefault("fallback", True) or False)
+
+    app._capture_worker()
+
+    assert seen["parent"] == "x11:0x1"
+    assert seen.get("fallback") is True
+
+    app._area_worker()
+
+    assert len(app.session.captures) == 1
