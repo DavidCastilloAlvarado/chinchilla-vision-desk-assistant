@@ -151,13 +151,19 @@ class App(Gtk.Application):
             self._status("wait for the current answer", "error")
             return
         self.show_panel()
-        self._status("asking for the screen; accept the permission dialog once")
+        self._status("asking for the screen")
         # GNOME refuses the screenshot access dialog unless the calling app owns
         # the focused window, so let the panel settle before hitting the portal.
         GLib.timeout_add(CAPTURE_DELAY_MS, self._spawn_capture_worker)
 
     def _spawn_capture_worker(self) -> bool:
         self.capture_parent = self.panel_handle()
+        LOGGER.info(
+            "capture start active=%s focus=%s handle=%r",
+            self.window.is_active() if self.window else None,
+            self.window.has_toplevel_focus() if self.window else None,
+            self.capture_parent,
+        )
         threading.Thread(target=self._capture_worker, daemon=True).start()
         return False
 
@@ -178,7 +184,7 @@ class App(Gtk.Application):
 
     def _run_area_selector(self) -> bool:
         """Fallback: let the desktop draw its own selector, like macOS does."""
-        self._status("no silent grab; using the desktop selector")
+        self._status("drag the area to capture in the GNOME selector")
         threading.Thread(target=self._area_worker, daemon=True).start()
         return False
 

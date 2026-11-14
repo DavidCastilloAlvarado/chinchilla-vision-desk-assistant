@@ -156,6 +156,13 @@ def _portal_screenshot(
         # instead of refusing outright.
         "modal": _GLib.Variant("b", True),
     }
+    use_parent = parent or _parent_window
+    LOGGER.info(
+        "portal screenshot interactive=%s parent=%r sender=%s",
+        interactive,
+        use_parent,
+        conn.get_unique_name(),
+    )
     try:
         reply = conn.call_sync(
             PORTAL_NAME,
@@ -200,6 +207,7 @@ def _portal_screenshot(
             "portal did not answer in time; a permission dialog may be waiting"
         )
     code = state.get("code")
+    LOGGER.info("portal response code=%s uri=%s", code, state.get("uri"))
     if code == 1:
         raise CaptureError("portal capture cancelled")
     if code != 0 or not state.get("uri"):

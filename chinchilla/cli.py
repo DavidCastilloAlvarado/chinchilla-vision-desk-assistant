@@ -142,6 +142,10 @@ def cmd_capture(args: argparse.Namespace) -> int:
     from .core import capture
     from .runtime import ensure_gdk_backend
 
+    # the backend has to be chosen before anything imports the UI, otherwise
+    # GTK opens the Wayland display and the panel has no X11 handle to give
+    # the screenshot portal
+    ensure_gdk_backend()
     if args.panel:
         from .ui.app import run_app
 

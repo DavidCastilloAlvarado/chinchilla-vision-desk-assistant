@@ -573,6 +573,7 @@ class PanelWindow(Gtk.Window):
         try:
             xid = window.get_xid()
         except (AttributeError, TypeError):
+            # Wayland toplevels have no X11 handle to hand to the portal
             return ""
         return f"x11:{xid:#x}" if xid else ""
 
