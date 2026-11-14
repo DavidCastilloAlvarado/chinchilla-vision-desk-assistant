@@ -1,0 +1,1690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Chinchilla Capture - Wireframes v0.2</title>
+<style>
+  :root {
+    --bg: #0b0d11;
+    --panel: #14171d;
+    --panel-2: #1a1e26;
+    --line: #262b35;
+    --text: #e6e9ef;
+    --muted: #8b93a3;
+    --accent: #f0b429;
+    --translate: #4c8dff;
+    --explain: #a78bfa;
+    --grammar: #34d399;
+    --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 24px 80px;
+    background: #06070a;
+    color: var(--text);
+    font: 13px/1.5 "Inter", "Cantarell", system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 56px;
+  }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .doc-head { width: 1280px; max-width: 100%; }
+  .doc-head p { color: var(--muted); margin: 4px 0 0; }
+  .doc-head .meta { display: flex; gap: 18px; margin-top: 14px; color: var(--muted); font-size: 12px; }
+  .doc-head .meta b { color: var(--text); font-weight: 500; }
+
+  .frame { width: 1280px; max-width: 100%; }
+  .frame-title {
+    display: flex; align-items: baseline; gap: 12px;
+    margin-bottom: 10px;
+  }
+  .frame-title .idx {
+    font: 600 11px/1 ui-monospace, monospace;
+    color: #06070a; background: var(--accent);
+    padding: 4px 7px; border-radius: 5px; letter-spacing: .04em;
+  }
+  .frame-title h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .frame-title span.sub { color: var(--muted); font-size: 12px; }
+
+  .screen {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #1e222b;
+    background: #0e1116;
+    isolation: isolate;
+  }
+  .notes {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+  .note {
+    background: #0f1217;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 10px 12px;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .note b { color: var(--text); font-weight: 600; }
+  .note > b:first-child { display: block; font-size: 11.5px; margin-bottom: 4px; }
+  .note code { color: #cfd6e4; background: #1a1f28; padding: 1px 4px; border-radius: 4px; font-size: 11px; }
+
+  /* ---------- fake desktop ---------- */
+  .desktop { position: absolute; inset: 0; background:
+      radial-gradient(900px 600px at 78% 12%, #2d4370 0%, transparent 62%),
+      radial-gradient(1000px 700px at 12% 88%, #4a2f56 0%, transparent 64%),
+      linear-gradient(150deg, #253349 0%, #1e2c3d 45%, #182231 100%);
+  }
+  .win {
+    position: absolute; background: #2b3444; border-radius: 10px;
+    border: 1px solid #3a4557; box-shadow: 0 18px 40px rgba(0,0,0,.45);
+    overflow: hidden;
+  }
+  .win .wbar {
+    height: 26px; background: #333e50; border-bottom: 1px solid #3d495c;
+    display: flex; align-items: center; gap: 6px; padding: 0 10px;
+  }
+  .wdot { width: 8px; height: 8px; border-radius: 50%; background: #4d5a70; }
+
+  .gnome-bar {
+    position: absolute; top: 0; left: 0; right: 0; height: 26px;
+    background: rgba(9,11,15,.82);
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 14px; font-size: 10.5px; color: #c6cddb;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+  .gnome-bar .g-act { font-weight: 600; }
+  .gnome-bar .g-app { color: #9aa3b3; }
+  .gnome-bar .g-right { margin-left: auto; color: #c6cddb; letter-spacing: .02em; }
+  .wbody { padding: 14px; display: flex; flex-direction: column; gap: 9px; }
+  .ln { height: 7px; border-radius: 4px; background: #3d4a5e; }
+  .ln.w60 { width: 60%; } .ln.w80 { width: 80%; } .ln.w40 { width: 40%; } .ln.w90 { width: 90%; }
+  .ln.hi { background: #5a6b86; }
+  .block { height: 74px; border-radius: 7px; background: #35415a; border: 1px solid #3f4c62; }
+
+  /* ---------- shared chip / button ---------- */
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 24px; padding: 0 10px; border-radius: 999px;
+    background: rgba(18,21,28,.86); border: 1px solid #2b3240;
+    color: #cfd6e4; font-size: 11px; backdrop-filter: blur(8px);
+  }
+  .kbd {
+    display: inline-block; min-width: 17px; text-align: center;
+    padding: 1px 4px; border-radius: 4px; font: 600 10px/1.4 ui-monospace, monospace;
+    background: #2a3040; border: 1px solid #3a4254; color: #dfe5f0;
+  }
+
+  /* ================= SCREEN 1 : selection overlay ================= */
+  .overlay-dim { position: absolute; inset: 0; background: rgba(6,8,12,.58); }
+  .sel {
+    position: absolute; left: 300px; top: 214px; width: 620px; height: 214px;
+    border: 1.5px solid #ffffff; border-radius: 2px;
+    box-shadow: 0 0 0 9999px rgba(6,8,12,.50), 0 0 0 1px rgba(0,0,0,.35);
+  }
+  .sel::before, .sel::after {
+    content: ""; position: absolute; background: rgba(255,255,255,.30);
+  }
+  .sel::before { left: 50%; top: 0; bottom: 0; width: 1px; }
+  .sel::after { top: 50%; left: 0; right: 0; height: 1px; }
+  .handle {
+    position: absolute; width: 7px; height: 7px; background: #fff;
+    border-radius: 1px; box-shadow: 0 0 0 1px rgba(0,0,0,.5);
+  }
+  .h-tl{left:-4px;top:-4px}.h-tc{left:calc(50% - 3px);top:-4px}.h-tr{right:-4px;top:-4px}
+  .h-ml{left:-4px;top:calc(50% - 3px)}.h-mr{right:-4px;top:calc(50% - 3px)}
+  .h-bl{left:-4px;bottom:-4px}.h-bc{left:calc(50% - 3px);bottom:-4px}.h-br{right:-4px;bottom:-4px}
+
+  .size-badge {
+    position: absolute; left: 300px; top: 178px;
+    background: #f0b429; color: #14161a; font: 600 11px/1 ui-monospace, monospace;
+    padding: 5px 8px; border-radius: 4px;
+  }
+  .cross-h, .cross-v { position: absolute; background: rgba(255,255,255,.16); }
+  .cross-h { left: 0; right: 0; height: 1px; }
+  .cross-v { top: 0; bottom: 0; width: 1px; }
+
+  .hint-bar {
+    position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 16px;
+    padding: 9px 16px; border-radius: 999px;
+    background: rgba(14,17,23,.92); border: 1px solid #2b3240;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+    font-size: 11.5px; color: #b9c1d0; white-space: nowrap;
+  }
+  .hint-bar .item { display: flex; align-items: center; gap: 6px; }
+  .hint-bar .sep { width: 1px; height: 14px; background: #2f3644; }
+  .brand-chip {
+    position: absolute; left: 22px; top: 40px;
+    display: flex; align-items: center; gap: 8px;
+    color: #cfd6e4; font-size: 11.5px;
+  }
+  .logo {
+    width: 20px; height: 20px; border-radius: 6px;
+    background: linear-gradient(145deg, #f0b429, #d99214);
+    display: grid; place-items: center;
+    color: #14161a; font: 800 11px/1 "Inter", sans-serif;
+  }
+  .loupe {
+    position: absolute; right: 34px; bottom: 26px;
+    width: 104px; height: 104px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.55);
+    background: #141a24; overflow: hidden;
+    box-shadow: 0 12px 30px rgba(0,0,0,.55);
+  }
+  .loupe .inner { position: absolute; inset: -60px; background:
+      radial-gradient(340px 220px at 70% 30%, #4a608a 0%, transparent 65%),
+      linear-gradient(160deg, #2b3a50, #35455e); }
+  .loupe .zoom {
+    position: absolute; inset: 0; opacity: .55;
+    background-image: linear-gradient(#8fa6c8 1px, transparent 1px),
+                      linear-gradient(90deg, #8fa6c8 1px, transparent 1px);
+    background-size: 13px 13px;
+  }
+  .loupe .crosshair-h { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: #f0b429; }
+  .loupe .crosshair-v { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: #f0b429; }
+
+  /* ================= SCREEN 2/3/4 : floating panel ================= */
+  .panel {
+    position: absolute;
+    width: 404px;
+    border-radius: 13px;
+    background: rgba(20,23,29,.97);
+    border: 1px solid #2c333f;
+    box-shadow: 0 26px 70px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.02) inset;
+    overflow: hidden;
+    backdrop-filter: blur(20px);
+  }
+  .panel-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 10px 10px 12px;
+    border-bottom: 1px solid #232935;
+    background: #171b22;
+  }
+  .thumb {
+    width: 46px; height: 32px; border-radius: 5px; flex: none;
+    background: linear-gradient(135deg,#26303f,#1b2230);
+    border: 1px solid #333c4b;
+    display: grid; place-items: center;
+    color: #7f8a9d; font-size: 8px; letter-spacing: .04em;
+  }
+  .head-meta { flex: 1; min-width: 0; }
+  .head-meta .t1 { font-size: 12px; font-weight: 600; color: #e6e9ef; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .head-meta .t2 { font-size: 10.5px; color: #7d879a; margin-top: 1px; }
+  .icon-btn {
+    width: 24px; height: 24px; border-radius: 6px; flex: none;
+    display: grid; place-items: center;
+    color: #8b93a3; background: transparent; border: 1px solid transparent;
+    font-size: 12px;
+  }
+  .icon-btn.hovered { background: #232a35; border-color: #2f3745; color: #e6e9ef; }
+
+  .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; padding: 11px 12px 0; }
+  .act {
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 8px 9px; border-radius: 8px;
+    background: #1c212b; border: 1px solid #2a3140;
+    color: #d7dce6; font-size: 11.5px; font-weight: 500;
+  }
+  .act .row { display: flex; align-items: center; justify-content: space-between; }
+  .act .hint { font: 600 9.5px/1 ui-monospace, monospace; color: #7b8497; }
+  .act .glyph { width: 14px; height: 14px; border-radius: 4px; }
+  .act.translate { border-color: #2b3f6b; background: #1a2233; }
+  .act.translate .glyph { background: var(--translate); }
+  .act.active .hint { color: #cfd6e4; }
+  .act.translate.active { border-color: #4c8dff; box-shadow: 0 0 0 1px #4c8dff inset, 0 4px 14px rgba(76,141,255,.18); }
+  .act.explain .glyph { background: var(--explain); }
+  .act.grammar .glyph { background: var(--grammar); }
+
+  .ask {
+    display: flex; align-items: center; gap: 8px;
+    margin: 9px 12px 0; padding: 0 8px 0 10px; height: 34px;
+    background: #12161d; border: 1px solid #2a3140; border-radius: 8px;
+    color: #6f7a8e; font-size: 11.5px;
+  }
+  .ask .caret { width: 1px; height: 14px; background: var(--accent); }
+  .ask .send {
+    margin-left: auto; width: 22px; height: 22px; border-radius: 5px;
+    background: #f0b429; color: #14161a; display: grid; place-items: center;
+    font-size: 11px; font-weight: 700;
+  }
+  .ask.filled { color: #dfe5f0; background: #161b24; border-color: #3a4354; }
+
+  .answer { padding: 13px 14px 0; }
+  .ans-label {
+    display: flex; align-items: center; gap: 7px;
+    font: 600 10px/1 "Inter", sans-serif; letter-spacing: .07em; text-transform: uppercase;
+    color: #7d879a; margin-bottom: 8px;
+  }
+  .ans-label .bar { height: 2px; flex: 1; background: #232935; border-radius: 2px; }
+  .ans-label .tag { color: var(--translate); }
+  .ans-label .tag.p { color: var(--explain); }
+  .ans-body { font-size: 12.5px; line-height: 1.65; color: #dde2eb; }
+  .ans-body p { margin: 0 0 9px; }
+  .ans-body em { color: #8b93a3; font-style: normal; }
+  .ans-body .src { color: #98a1b2; font-size: 11.5px; border-left: 2px solid #333c4b; padding-left: 8px; margin-bottom: 10px; }
+  .cursor {
+    display: inline-block; width: 6px; height: 13px; background: var(--accent);
+    vertical-align: -2px; animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0 } }
+  .thinking { display: flex; align-items: center; gap: 6px; color: #8b93a3; font-size: 11px; }
+  .dots { display: flex; gap: 3px; }
+  .dots i { width: 4px; height: 4px; border-radius: 50%; background: #6d7789; display: block; }
+
+  .panel-foot {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 12px; padding: 9px 12px;
+    border-top: 1px solid #232935; background: #171b22;
+    color: #7d879a; font-size: 10.5px;
+  }
+  .foot-btn {
+    margin-left: auto; display: flex; gap: 5px;
+  }
+  .foot-btn span {
+    padding: 3px 7px; border-radius: 5px; background: #1f252f;
+    border: 1px solid #2c3340; color: #c3cad8; font-size: 10.5px;
+  }
+  .foot-btn span.primary { background: #f0b429; border-color: #f0b429; color: #14161a; font-weight: 600; }
+
+  .drop-shadow-ghost {
+    position: absolute; border-radius: 13px; background: rgba(0,0,0,.35);
+    filter: blur(18px);
+  }
+  .anchor-arrow {
+    position: absolute; width: 10px; height: 10px; background: var(--accent);
+    border-radius: 50%; box-shadow: 0 0 0 4px rgba(240,180,41,.18);
+  }
+
+  .kbdrow {
+    display: grid; grid-template-columns: 190px 1fr auto; gap: 12px; align-items: center;
+    background: #10141a; border: 1px solid #2a3140; border-radius: 7px;
+    padding: 8px 10px; font-size: 11.5px; color: #dfe5f0;
+  }
+  .kbdrow .kc { font: 10.5px/1.4 ui-monospace, monospace; color: #9aa3b3; }
+  .kbdrow .kk { display: flex; gap: 3px; }
+  .kbdrow .kk i {
+    font-style: normal; font: 600 10px/1 ui-monospace, monospace;
+    padding: 2px 5px; border-radius: 4px; background: #2a3040;
+    border: 1px solid #3a4254; color: #dfe5f0;
+  }
+  .knote { margin: 8px 0 0; font-size: 10.5px; line-height: 1.55; color: #7d879a; }
+  .knote code { color: #cfd6e4; }
+
+  /* ================= SCREEN 5 : tray + settings ================= */
+  .tray {
+    position: absolute; right: 16px; top: 38px;
+    width: 236px; padding: 6px;
+    background: rgba(22,26,33,.98); border: 1px solid #2e3542;
+    border-radius: 10px; box-shadow: 0 22px 50px rgba(0,0,0,.6);
+    font-size: 12px;
+  }
+  .tray .item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 9px; border-radius: 6px; color: #dfe4ee;
+  }
+  .tray .item .short { margin-left: auto; color: #7b8497; font: 600 10px/1 ui-monospace, monospace; }
+  .tray .item.on { background: #2b3f6b; color: #fff; }
+  .tray .sep { height: 1px; background: #2a303c; margin: 5px 4px; }
+  .tray .item.dim { color: #8b93a3; }
+
+  .settings {
+    position: absolute; left: 150px; top: 84px; width: 560px;
+    background: #14181f; border: 1px solid #2c333f; border-radius: 12px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.7); overflow: hidden;
+  }
+  .settings-head {
+    display: flex; align-items: center; gap: 10px; padding: 13px 16px;
+    border-bottom: 1px solid #232a35; background: #171c23;
+    font-weight: 600; font-size: 13px;
+  }
+  .tabs { display: flex; gap: 4px; margin-left: auto; }
+  .tabs span { padding: 4px 9px; border-radius: 6px; font-size: 11px; color: #8b93a3; }
+  .tabs span.on { background: #262d39; color: #e6e9ef; }
+  .settings-body { padding: 14px 16px 16px; display: grid; grid-template-columns: 130px 1fr; gap: 11px 14px; align-items: center; }
+  .lbl { color: #a7b0c0; font-size: 11.5px; }
+  .field {
+    height: 30px; border-radius: 7px; background: #10141a;
+    border: 1px solid #2a3140; display: flex; align-items: center;
+    padding: 0 10px; color: #dfe5f0; font-size: 11.5px; gap: 8px;
+  }
+  .field .caret2 { margin-left: auto; color: #6f7a8e; font-size: 10px; }
+  .field .chips { display: flex; gap: 4px; margin-left: auto; }
+  .field .chips b { font-weight: 600; font-size: 10.5px; padding: 2px 5px; border-radius: 4px; background: #2a3040; border: 1px solid #3a4254; }
+  .switch { width: 30px; height: 17px; border-radius: 999px; background: #3a4254; position: relative; margin-left: auto; }
+  .switch i { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; }
+  .switch.on { background: #f0b429; }
+  .switch.on i { left: auto; right: 2px; }
+  .settings-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 11px 16px; border-top: 1px solid #232a35; background: #171c23; }
+  .settings-foot span { padding: 6px 12px; border-radius: 7px; font-size: 11.5px; border: 1px solid #2c3340; color: #c3cad8; }
+  .settings-foot span.primary { background: #f0b429; border-color: #f0b429; color: #14161a; font-weight: 600; }
+
+  /* ================= SCREEN 6 : annotations ================= */
+  .legend { position: absolute; left: 620px; top: 40px; width: 610px; }
+  .legend h3 { font-size: 13px; margin: 0 0 10px; color: #e6e9ef; font-weight: 600; }
+  .legend ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; counter-reset: l; }
+  .legend li {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: #13171e; border: 1px solid #242b36; border-radius: 8px;
+    padding: 8px 11px; font-size: 11.5px; color: #a7b0c0;
+  }
+  .legend li .n {
+    flex: none; width: 17px; height: 17px; border-radius: 50%;
+    background: var(--accent); color: #14161a; font: 700 9.5px/17px "Inter", sans-serif;
+    text-align: center;
+  }
+  .legend li b { color: #e6e9ef; font-weight: 600; }
+  .anno {
+    position: absolute; width: 19px; height: 19px; border-radius: 50%;
+    background: var(--accent); color: #14161a;
+    font: 700 10px/19px "Inter", sans-serif; text-align: center;
+    box-shadow: 0 0 0 3px rgba(240,180,41,.22);
+  }
+  .pipe { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+  .p-node {
+    padding: 5px 10px; border-radius: 6px; background: #232b38;
+    border: 1px solid #38424f; color: #eef1f7; font-size: 11px; white-space: nowrap;
+  }
+  .pipe i { color: #4b5464; font-style: normal; font-size: 11px; }
+
+  /* ================= SCREEN 7 : states ================= */
+  .states {
+    position: absolute; inset: 0; padding: 40px 44px;
+    display: flex; flex-direction: row; align-items: flex-start; gap: 22px;
+  }
+  .state-col { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+  .state-name { font: 600 11px/1.4 ui-monospace, monospace; color: var(--accent); padding-top: 4px; }
+  .state-name small { display: block; color: #6f7a8e; font: 400 10.5px/1.4 "Inter", sans-serif; margin-top: 3px; }
+  .states .state-col > .state-card { margin-bottom: 4px; }
+  .state-card {
+    background: #14181f; border: 1px solid #252c37; border-radius: 10px; padding: 12px 14px;
+  }
+  .scrollbar-demo {
+    height: 44px; border-radius: 6px; background: #10141a; margin-top: 9px;
+    border: 1px solid #242b36; position: relative;
+  }
+  .scrollbar-demo i {
+    position: absolute; right: 3px; top: 4px; width: 5px; height: 20px;
+    border-radius: 3px; background: #3c4557;
+  }
+  .dotamber { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .mini-panel {
+    width: 100%; max-width: 560px; border-radius: 10px; overflow: hidden;
+    background: #171b22; border: 1px solid #2b3240;
+  }
+  .err { border-color: #5b2b2b; background: #241a1c; }
+  .err .mini-head { background: #2a1c1f; border-color: #4a272b; }
+  .mini-head { display: flex; align-items: center; gap: 8px; padding: 8px 11px; border-bottom: 1px solid #242b36; background: #1a1f27; font-size: 11.5px; }
+  .mini-head .dotred { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+  .mini-body { padding: 10px 11px; font-size: 11px; color: #a7b0c0; }
+  .mini-body .actions-inline { display: flex; gap: 6px; margin-top: 8px; }
+  .mini-body .actions-inline span { padding: 4px 9px; border-radius: 6px; border: 1px solid #2f3745; font-size: 10.5px; color: #cfd6e4; }
+  .mini-body .actions-inline span.p { background: #f0b429; border-color: #f0b429; color: #14161a; font-weight: 600; }
+  .toast {
+    position: absolute; left: 44px; bottom: 12px;
+    display: flex; align-items: center; gap: 9px; padding: 9px 13px;
+    background: #1a1f27; border: 1px solid #2f3745; border-radius: 8px;
+    font-size: 11.5px; color: #cfd6e4; box-shadow: 0 14px 34px rgba(0,0,0,.5);
+  }
+  .toast .okdot { width: 7px; height: 7px; border-radius: 50%; background: var(--grammar); }
+
+  /* ================= v0.2 : sessions, providers, web search ================= */
+
+  /* header: session title (opens selector) + tools */
+  .head-meta .t1 .cv { color: #6f7a8e; font-size: 8px; margin-left: 3px; }
+  .thumb-stack { position: relative; width: 58px; height: 34px; flex: none; margin-right: 3px; }
+  .thumb-stack .behind {
+    position: absolute; left: 0; top: 0; width: 46px; height: 32px; border-radius: 5px;
+    background: #1e2632; border: 1px solid #2f3846;
+  }
+  .thumb-stack .thumb { position: absolute; left: 10px; top: 2px; z-index: 2; }
+  .thumb-stack .count {
+    position: absolute; right: 0; bottom: 0; z-index: 3; padding: 0 3px; border-radius: 4px;
+    background: #2b3f6b; border: 1px solid #3f5b93; color: #d7e3ff;
+    font: 600 8.5px/13px ui-monospace, monospace;
+  }
+
+  .toolrow { display: flex; align-items: center; gap: 6px; padding: 9px 12px 0; }
+  .tool {
+    display: flex; align-items: center; gap: 6px; height: 23px; padding: 0 8px;
+    border-radius: 6px; background: #1b212a; border: 1px solid #2a3140;
+    color: #a9b2c2; font-size: 10.5px; white-space: nowrap;
+  }
+  .tool .sw { width: 20px; height: 11px; border-radius: 999px; background: #3a4254; position: relative; flex: none; }
+  .tool .sw i { position: absolute; top: 1.5px; left: 1.5px; width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+  .tool.on { background: #1a2333; border-color: #2b3f6b; color: #dbe6ff; }
+  .tool.on .sw { background: #4c8dff; }
+  .tool.on .sw i { left: auto; right: 1.5px; }
+  .tool .plus { color: #c9d1de; font-size: 12px; font-weight: 600; line-height: 1; }
+  .tool .n { margin-left: 2px; font: 600 9px/1 ui-monospace, monospace; color: #7b8497; }
+  .tool.cam { margin-left: auto; }
+  .tool.dim { margin-left: auto; color: #6f7a8e; border-color: transparent; background: transparent; padding: 0; }
+
+  /* thread */
+  .thread { display: flex; flex-direction: column; gap: 11px; padding: 11px 12px 0; }
+  .turn { display: flex; gap: 8px; }
+  .turn .av {
+    width: 17px; height: 17px; border-radius: 5px; flex: none; margin-top: 1px;
+    display: grid; place-items: center; font: 800 8px/1 "Inter", sans-serif;
+  }
+  .turn.user .av { background: #2b3444; border: 1px solid #3a4557; color: #9aa3b3; }
+  .turn.ai .av { background: linear-gradient(145deg, #f0b429, #d99214); color: #14161a; }
+  .bubble { flex: 1; min-width: 0; }
+  .bubble .who {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 3px;
+    font: 600 9px/1 "Inter", sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6f7a8e;
+  }
+  .bubble .who .tag { color: #a78bfa; }
+  .bubble .who .tag.t { color: #4c8dff; }
+  .bubble .who .tag.g { color: #34d399; }
+  .bubble .who .tstamp { margin-left: auto; letter-spacing: 0; text-transform: none; font: 400 9.5px/1 "Inter", sans-serif; color: #5f6a7c; }
+  .bubble .txt { font-size: 12px; line-height: 1.6; color: #dde2eb; }
+  .bubble .txt p { margin: 0 0 7px; }
+  .bubble .txt p:last-child { margin-bottom: 0; }
+  .crops { display: flex; gap: 6px; margin: 6px 0; }
+  .crop-mini {
+    position: relative; width: 88px; height: 50px; border-radius: 6px;
+    background: linear-gradient(135deg, #2b3a51, #1d2636);
+    border: 1px solid #3a4658; display: grid; place-items: center;
+    color: #7f8a9d; font-size: 7.5px; letter-spacing: .04em;
+  }
+  .crop-mini.n2 { border-color: #4a5f80; }
+  .crop-mini .lbl {
+    position: absolute; left: 3px; bottom: 2px; padding: 0 3px; border-radius: 3px;
+    background: rgba(8,10,14,.78); color: #b6c0d0; font: 600 7px/1.5 ui-monospace, monospace;
+  }
+  .crop-mini .new { position: absolute; right: 3px; top: 2px; color: #f0b429; font: 700 7px/1.5 ui-monospace, monospace; }
+  .divider { height: 1px; background: #232935; }
+
+  /* citations + sources */
+  .cite {
+    display: inline-block; padding: 0 3px; margin: 0 1px; border-radius: 3px;
+    background: #243149; border: 1px solid #35507f; color: #a9c6ff;
+    font: 600 8.5px/1.45 ui-monospace, monospace; vertical-align: 1px;
+  }
+  .sources { margin-top: 9px; border-top: 1px dashed #2a3140; padding-top: 7px; }
+  .sources .sh { font: 600 9px/1 "Inter", sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #6f7a8e; margin-bottom: 5px; }
+  .sources .s { display: flex; gap: 6px; font-size: 10.5px; color: #9aa9c2; margin-bottom: 3px; }
+  .sources .s i { font-style: normal; color: #6f7a8e; font: 600 9.5px/1.5 ui-monospace, monospace; flex: none; }
+
+  /* searching activity */
+  .searching { display: flex; flex-direction: column; gap: 5px; margin-bottom: 9px; }
+  .searching .step { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: #9aa3b3; }
+  .searching .step .tick { width: 12px; height: 12px; border-radius: 50%; display: grid; place-items: center; font-size: 7px; background: #1b2a22; border: 1px solid #2f4a37; color: #4ade80; flex: none; }
+  .searching .step.run .tick { background: #2a2416; border-color: #5a4a1d; color: #f0b429; }
+  .searching .step .el { margin-left: auto; color: #6f7a8e; font: 600 9.5px/1 ui-monospace, monospace; }
+  .searching .step code { color: #cfd6e4; background: #1a1f28; padding: 0 3px; border-radius: 3px; font-size: 9.5px; }
+
+  /* session selector popover */
+  .session-pop {
+    position: absolute; width: 312px; border-radius: 11px; z-index: 4;
+    background: rgba(20,24,30,.99); border: 1px solid #2e3542;
+    box-shadow: 0 30px 70px rgba(0,0,0,.7); overflow: hidden;
+  }
+  .session-pop .sp-head {
+    display: flex; align-items: center; gap: 6px; padding: 9px 10px;
+    border-bottom: 1px solid #232a35; background: #171c23;
+    font: 600 9.5px/1 "Inter", sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #8b93a3;
+  }
+  .session-pop .sp-head .new {
+    margin-left: auto; padding: 4px 9px; border-radius: 5px; background: #f0b429;
+    color: #14161a; font: 600 10.5px/1 "Inter", sans-serif; letter-spacing: 0; text-transform: none;
+  }
+  .sp-search { margin: 8px 9px 6px; height: 27px; border-radius: 6px; background: #10141a; border: 1px solid #2a3140; display: flex; align-items: center; gap: 6px; padding: 0 8px; color: #6f7a8e; font-size: 10.5px; }
+  .sp-row { display: flex; gap: 8px; padding: 7px 10px; align-items: flex-start; }
+  .sp-row.on { background: #1b2432; box-shadow: inset 2px 0 0 #4c8dff; }
+  .sp-row .th { width: 30px; height: 21px; border-radius: 4px; flex: none; background: linear-gradient(135deg,#2b3a51,#1d2636); border: 1px solid #3a4658; display: grid; place-items: center; font-size: 6.5px; color: #7f8a9d; }
+  .sp-row .meta { flex: 1; min-width: 0; }
+  .sp-row .t { color: #e6e9ef; font-weight: 600; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sp-row .p { color: #7d879a; font-size: 10px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sp-row .time { color: #6b7688; font-size: 9.5px; flex: none; }
+  .sp-foot { border-top: 1px solid #232a35; background: #171c23; padding: 7px 10px; color: #7d879a; font-size: 10px; display: flex; gap: 10px; }
+  .sp-foot b { color: #cfd6e4; font-weight: 500; }
+
+  /* settings v2 */
+  .settings.wide { width: 700px; }
+  .settings-body.one { display: flex; flex-direction: column; gap: 9px; align-items: stretch; }
+  .grp { font: 600 9.5px/1 "Inter", sans-serif; letter-spacing: .09em; text-transform: uppercase; color: #6f7a8e; margin: 5px 0 0; }
+  .grp:first-child { margin-top: 0; }
+  .act-row { border: 1px solid #262d3a; border-radius: 9px; padding: 9px 10px; background: #12161d; }
+  .act-row .ar-head { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+  .act-row .ar-head .glyph { width: 11px; height: 11px; border-radius: 3px; }
+  .act-row .ar-head .nm { font-size: 11px; font-weight: 600; color: #e6e9ef; }
+  .act-row .ar-head .reset { margin-left: auto; color: #7d879a; font-size: 9.5px; border: 1px solid #2c3340; padding: 2px 6px; border-radius: 4px; }
+  .act-row .field { height: 26px; font-size: 11px; }
+  .act-row .ta {
+    margin-top: 6px; background: #0f131a; border: 1px solid #2a3140; border-radius: 6px;
+    padding: 6px 8px; color: #c3cad8; font: 10.5px/1.55 ui-monospace, monospace; white-space: pre-wrap;
+  }
+  .act-row .ta .v { color: #f0b429; }
+
+  .prov-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .prov { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: #12161d; border: 1px solid #262d3a; font-size: 11.5px; color: #cfd6e4; }
+  .prov.on { border-color: #4c8dff; box-shadow: 0 0 0 1px #4c8dff inset; background: #151d2b; }
+  .prov .lg { width: 18px; height: 18px; border-radius: 5px; flex: none; display: grid; place-items: center; font: 700 9px/1 "Inter", sans-serif; color: #0e1116; }
+  .prov .sub2 { color: #7d879a; font-size: 9.5px; margin-top: 1px; }
+  .prov .tag2 { margin-left: auto; font: 600 8.5px/1 ui-monospace, monospace; color: #7d879a; }
+  .prov .tag2.ok { color: #34d399; }
+  .field.mono { font: 10.5px/1 ui-monospace, monospace; }
+  .hintline { color: #6f7a8e; font-size: 9.5px; margin-top: -3px; }
+  .field.good { border-color: #2f4a37; }
+  .field.good .ok { color: #34d399; }
+
+  /* ---------- overview screen ---------- */
+  .ov { position: absolute; inset: 0; padding: 46px 60px; }
+  .ov > * { flex: none; }
+  .ov { display: flex; flex-direction: column; justify-content: center; }
+  .ov h2 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .ov .lead { color: #98a1b2; font-size: 13.5px; max-width: 760px; margin-bottom: 30px; }
+  .ov-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .ov-card { background: #13171e; border: 1px solid #242b36; border-radius: 10px; padding: 14px 16px; }
+  .ov-card .step { font: 600 10px/1 ui-monospace, monospace; color: var(--accent); letter-spacing: .06em; }
+  .ov-card h4 { margin: 7px 0 5px; font-size: 13px; font-weight: 600; }
+  .ov-card p { margin: 0; color: #8b93a3; font-size: 11.5px; line-height: 1.55; }
+  .ov-foot { display: flex; gap: 24px; margin-top: 26px; color: #6f7a8e; font-size: 11.5px; }
+  .ov-foot b { color: #cfd6e4; font-weight: 600; }
+
+  .ov-decisions {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+    margin-top: 22px; padding-top: 20px; border-top: 1px solid #1f242e;
+  }
+  .dec h5 { margin: 0 0 6px; font-size: 11.5px; font-weight: 600; color: #f0b429; letter-spacing: .01em; }
+  .dec p { margin: 0; color: #8b93a3; font-size: 11px; line-height: 1.6; }
+
+  .ov-spec {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+    margin-top: 16px; padding-top: 14px; border-top: 1px solid #1f242e;
+    color: #8b93a3; font-size: 10.5px; line-height: 1.55;
+  }
+  .ov-spec b {
+    display: block; margin-bottom: 5px; font: 600 9.5px/1 ui-monospace, monospace;
+    color: #f0b429; letter-spacing: .12em; text-transform: uppercase;
+  }
+  .ov-spec code { font: 10px/1 ui-monospace, monospace; color: #cfd6e4; overflow-wrap: anywhere; }
+  .ov-spec > div { min-width: 0; }
+  .dec b { color: #cfd6e4; font-weight: 600; }
+
+  /* ---------- module map / build order (screen 06) ---------- */
+  .card-block {
+    position: absolute; background: #13171e; border: 1px solid #242b36;
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .card-block h4 { margin: 0 0 8px; font-size: 11.5px; font-weight: 600; color: #e6e9ef; }
+  .modlist { display: flex; flex-direction: column; gap: 5px; }
+  .modlist div { display: flex; gap: 8px; font: 10.5px/1.5 ui-monospace, monospace; color: #8b93a3; }
+  .modlist div b { color: #f0b429; font-weight: 600; flex: none; width: 106px; }
+  .modlist div span { color: #9aa3b3; }
+  .build { display: flex; flex-direction: column; gap: 6px; }
+  .build .b { display: flex; gap: 8px; align-items: baseline; font-size: 10.5px; color: #9aa3b3; }
+  .build .b i {
+    flex: none; width: 15px; height: 15px; border-radius: 4px; background: #232a35;
+    border: 1px solid #333c4b; color: #cfd6e4; font: 600 9px/14px ui-monospace, monospace;
+    text-align: center; font-style: normal;
+  }
+  .build .b b { color: #dfe5f0; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="doc-head">
+  <h1>Chinchilla Capture &mdash; Wireframes v0.2</h1>
+  <p>Screen region capture &rarr; floating prompt panel &rarr; multi-turn, tool-using vision agent. Linux, Wayland-first, GNOME.</p>
+  <div class="meta">
+    <span><b>Target:</b> Ubuntu 24.04 / GNOME 46 on Wayland</span>
+    <span><b>Toolkit:</b> Python 3 + GTK3 (PyGObject)</span>
+    <span><b>Hotkey:</b> Ctrl + Alt + A</span>
+    <span><b>Status:</b> pre-code design review</span>
+  </div>
+  <div class="meta">
+    <span><b>v0.2 adds:</b> persisted sessions &middot; multi-capture threads &middot; OpenAI / Anthropic / OpenRouter / custom providers &middot; editable action titles &amp; prompts &middot; web search with citations</span>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 0 : overview ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">00</span><h2>Flow at a glance</h2><span class="sub">the whole product in six beats</span></div>
+  <div class="screen">
+    <div class="ov">
+      <h2>One shortcut. Drag a box. Keep talking.</h2>
+      <p class="lead">A resident, terminal-less process owns a global hotkey. It paints a fullscreen selection layer, grabs the pixels you framed, and instantly opens a frameless always-on-top panel with the crop attached to a <b>persisted session</b>. Three editable one-click actions plus a free-text box, follow-up turns, extra captures dropped into the same conversation, and optional web search. No paste, no file dialog, no browser tab.</p>
+      <div class="ov-grid">
+        <div class="ov-card"><div class="step">STEP 1</div><h4>Hotkey fires</h4><p><span class="kbd">Ctrl</span> <span class="kbd">Alt</span> <span class="kbd">A</span> &mdash; registered with the compositor, no terminal window ever appears.</p></div>
+        <div class="ov-card"><div class="step">STEP 2</div><h4>Selection layer</h4><p>Whole desktop dims, crosshair follows the pointer, drag to frame. Live <code>W &times; H</code> badge and magnifier.</p></div>
+        <div class="ov-card"><div class="step">STEP 3</div><h4>Panel joins a session</h4><p>Crop goes into the active session, or a brand-new one. Every turn is written to a file as it happens.</p></div>
+        <div class="ov-card"><div class="step">STEP 4</div><h4>Keep the thread going</h4><p>Follow-up prompts reuse the crops already in the session. <span class="kbd">Ctrl</span><span class="kbd">R</span> adds another capture to the same conversation.</p></div>
+        <div class="ov-card"><div class="step">STEP 5</div><h4>Search the web when it matters</h4><p>A toggle gives the agent a real Google search tool over your local Chrome; answers come back with <code>[1]</code> citations and a source list.</p></div>
+        <div class="ov-card"><div class="step">STEP 6</div><h4>Any provider</h4><p>OpenAI, Anthropic, OpenRouter, or a custom OpenAI-compatible endpoint from <code>.env</code>. Same panel, same <code>chat()</code> contract.</p></div>
+      </div>
+      <div class="ov-foot">
+        <span><b>Never a terminal</b> &mdash; single instance, tray icon</span>
+        <span><b>Never a copy-paste</b> &mdash; pixels go straight into the session</span>
+        <span><b>Keyboard first</b> &mdash; 1/2/3 choose an action, Enter sends</span>
+        <span><b>Survives restart</b> &mdash; the thread is a file, not RAM</span>
+      </div>
+
+      <div class="ov-decisions">
+        <div class="dec">
+          <h5>Constraint &mdash; Wayland has no global hooks</h5>
+          <p>The shortcut is a <b>GNOME custom shortcut</b> bound to <code>chinchilla capture</code>; pixels come from the <b>portal Screenshot</b> API (one consent prompt, then silent).</p>
+        </div>
+        <div class="dec">
+          <h5>Constraint &mdash; always-on-top under GNOME</h5>
+          <p>Frameless panels need <code>gtk-layer-shell</code> (or a hint + transient-for) to float above other windows. X11 fallback is override-redirect.</p>
+        </div>
+        <div class="dec">
+          <h5>Decision &mdash; the session is the unit</h5>
+          <p>One JSON file per session holds title, ordered turns, capture references and sources. The panel is just a view of that file, reloaded on start.</p>
+        </div>
+        <div class="dec">
+          <h5>Decision &mdash; one agent, one tool belt</h5>
+          <p>Providers sit behind one adapter. Web search is an <b>MCP stdio server</b> (<code>dsh-google-chrome-search</code>) exposed to the model as tools, not a bespoke API.</p>
+        </div>
+      </div>
+
+      <div class="ov-spec">
+        <div><b>Panel</b>404 px wide, docks beside the crop, flips side at the screen edge</div>
+        <div><b>Image path</b>crop &rarr; 1568 px long edge &rarr; JPEG q85 &rarr; base64 into the turn</div>
+        <div><b>On disk</b><code>~/.local/share/chinchilla/sessions/&lt;ulid&gt;.json</code></div>
+        <div><b>Keys</b><code>Ctrl+Alt+A</code> capture &middot; <code>Ctrl+R</code> recapture &middot; <code>Ctrl+N</code> new &middot; <code>Ctrl+S</code> sessions</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 1 : selection ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">01</span><h2>Selection layer</h2><span class="sub">what the user sees the instant the hotkey fires</span></div>
+  <div class="screen">
+    <div class="desktop">
+      <div class="gnome-bar"><span class="g-act">Activities</span><span class="g-app">Files</span><span class="g-right">Fri Nov 14&nbsp;&nbsp;11:28&nbsp;&nbsp;EN&nbsp;&nbsp;100%&nbsp;&nbsp;&#9662;</span></div>
+      <div class="win" style="left:60px;top:70px;width:420px;height:250px">
+        <div class="wbar"><i class="wdot"></i><i class="wdot"></i><i class="wdot"></i></div>
+        <div class="wbody"><div class="ln w40"></div><div class="ln w90"></div><div class="ln w80"></div><div class="block"></div><div class="ln w60"></div></div>
+      </div>
+      <div class="win" style="left:300px;top:214px;width:620px;height:214px">
+        <div class="wbar"><i class="wdot"></i><i class="wdot"></i><i class="wdot"></i></div>
+        <div class="wbody">
+          <div class="ln w40 hi"></div>
+          <div class="ln w90"></div><div class="ln w80"></div><div class="ln w60"></div>
+          <div style="display:flex;gap:10px"><div class="block" style="flex:1"></div><div class="block" style="flex:1"></div></div>
+        </div>
+      </div>
+      <div class="win" style="left:960px;top:120px;width:270px;height:420px">
+        <div class="wbar"><i class="wdot"></i><i class="wdot"></i><i class="wdot"></i></div>
+        <div class="wbody"><div class="ln w40"></div><div class="ln w80"></div><div class="ln w90"></div><div class="ln w60"></div><div class="block" style="height:140px"></div><div class="ln w80"></div><div class="ln w40"></div></div>
+      </div>
+    </div>
+
+    <div class="cross-h" style="top:620px"></div>
+    <div class="cross-v" style="left:920px"></div>
+
+    <div class="sel">
+      <i class="handle h-tl"></i><i class="handle h-tc"></i><i class="handle h-tr"></i>
+      <i class="handle h-ml"></i><i class="handle h-mr"></i>
+      <i class="handle h-bl"></i><i class="handle h-bc"></i><i class="handle h-br"></i>
+    </div>
+    <div class="size-badge">620 &times; 214</div>
+
+    <div class="brand-chip"><div class="logo">C</div> Select an area</div>
+
+    <div class="hint-bar">
+      <div class="item">Drag to select</div><div class="sep"></div>
+      <div class="item"><span class="kbd">Esc</span> cancel</div><div class="sep"></div>
+      <div class="item"><span class="kbd">Enter</span> last area</div><div class="sep"></div>
+      <div class="item"><span class="kbd">Shift</span> keep previous box</div>
+    </div>
+
+    <div class="loupe">
+      <div class="inner"></div>
+      <div class="zoom"></div>
+      <div class="crosshair-h"></div><div class="crosshair-v"></div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>Instant, no flash</b>Frame is grabbed before the layer paints, so the dim sheet never appears in the crop.</div>
+    <div class="note"><b>Multi-monitor</b>One layer per output; drag may cross screens and the crop is stitched from a virtual-desktop image.</div>
+    <div class="note"><b>Precision</b>Arrow keys nudge the box by 1px, <code>Shift</code>+arrow by 10px, before <code>Enter</code> commits.</div>
+    <div class="note"><b>Cancel is free</b><code>Esc</code> / right click aborts. No panel, no request, no history entry.</div>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 2 : panel idle ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">02</span><h2>Result panel &mdash; idle</h2><span class="sub">opens the moment the mouse is released, already inside a session</span></div>
+  <div class="screen">
+    <div class="desktop">
+      <div class="gnome-bar"><span class="g-act">Activities</span><span class="g-app">Files</span><span class="g-right">Fri Nov 14&nbsp;&nbsp;11:28&nbsp;&nbsp;EN&nbsp;&nbsp;100%&nbsp;&nbsp;&#9662;</span></div>
+      <div class="win" style="left:70px;top:60px;width:620px;height:300px">
+        <div class="wbar"><i class="wdot"></i><i class="wdot"></i><i class="wdot"></i></div>
+        <div class="wbody"><div class="ln w40"></div><div class="ln w90"></div><div class="ln w80"></div><div class="ln w60"></div><div class="block" style="height:120px"></div></div>
+      </div>
+      <div class="win" style="left:800px;top:300px;width:400px;height:420px">
+        <div class="wbar"><i class="wdot"></i><i class="wdot"></i><i class="wdot"></i></div>
+        <div class="wbody"><div class="ln w40"></div><div class="ln w90"></div><div class="ln w80"></div></div>
+      </div>
+    </div>
+    <div class="overlay-dim" style="background:rgba(6,8,12,.34)"></div>
+
+    <div class="panel" style="left:700px;top:186px">
+      <div class="panel-head">
+        <div class="thumb-stack">
+          <i class="behind"></i>
+          <div class="thumb">CROP</div>
+          <span class="count">1</span>
+        </div>
+        <div class="head-meta">
+          <div class="t1">Q3 invoice &mdash; revenue note <span class="cv">&#9662;</span></div>
+          <div class="t2">620 &times; 214 &middot; PNG &middot; new session</div>
+        </div>
+        <div class="icon-btn hovered">&times;</div>
+      </div>
+
+      <div class="toolrow">
+        <div class="tool on"><span class="sw"><i></i></span>Web search</div>
+        <div class="tool"><span class="plus">+</span>Capture<span class="n">Ctrl R</span></div>
+        <div class="tool cam"><span class="plus">+</span>New session</div>
+      </div>
+
+      <div class="actions">
+        <div class="act translate"><div class="row"><i class="glyph"></i><span class="hint">1</span></div>Translate</div>
+        <div class="act explain"><div class="row"><i class="glyph"></i><span class="hint">2</span></div>Explain</div>
+        <div class="act grammar"><div class="row"><i class="glyph"></i><span class="hint">3</span></div>Fix grammar</div>
+      </div>
+
+      <div class="ask">
+        <span>Ask anything about this capture&hellip;</span>
+        <span class="caret"></span>
+        <div class="send">&crarr;</div>
+      </div>
+
+      <div class="panel-foot">
+        <span>openai &middot; gpt-4o-mini</span>
+        <div class="foot-btn"><span>Esc</span><span>Close</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>The session is created silently</b>The first capture of a new thread creates <code>~/.local/share/chinchilla/sessions/&lt;id&gt;.json</code> and auto-titles it from the first prompt.</div>
+    <div class="note"><b>Title is a button</b>Clicking the session title (<code>&#9662;</code>) opens the session selector; <b>New session</b> in the toolbar starts a clean thread.</div>
+    <div class="note"><b>Web search is opt-in per session</b>Off by default; the switch is remembered per session and shown in the footer while a tool is running.</div>
+    <div class="note"><b>Placement</b>Anchored below-right of the crop, flips side automatically so it never covers the selection. Always on top, no taskbar entry.</div>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 3 : streaming translate ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">03</span><h2>Result panel &mdash; Translate, streaming</h2><span class="sub">the highest frequency path</span></div>
+  <div class="screen">
+    <div class="desktop">
+      <div class="gnome-bar"><span class="g-act">Activities</span><span class="g-app">Files</span><span class="g-right">Fri Nov 14&nbsp;&nbsp;11:28&nbsp;&nbsp;EN&nbsp;&nbsp;100%&nbsp;&nbsp;&#9662;</span></div>
+      <div class="win" style="left:60px;top:70px;width:700px;height:520px">
+        <div class="wbar"><i class="wdot"></i><i class="wdot"></i><i class="wdot"></i></div>
+        <div class="wbody"><div class="ln w40 hi"></div><div class="ln w90"></div><div class="ln w80"></div><div class="ln w60"></div><div class="block" style="height:180px"></div><div class="ln w90"></div><div class="ln w40"></div></div>
+      </div>
+    </div>
+    <div class="overlay-dim" style="background:rgba(6,8,12,.34)"></div>
+
+    <div class="panel" style="left:790px;top:150px">
+      <div class="panel-head">
+        <div class="thumb-stack">
+          <i class="behind"></i>
+          <div class="thumb">CROP</div>
+          <span class="count">1</span>
+        </div>
+        <div class="head-meta">
+          <div class="t1">Q3 invoice &mdash; revenue note <span class="cv">&#9662;</span></div>
+          <div class="t2">Spanish detected &rarr; English</div>
+        </div>
+        <div class="icon-btn">&times;</div>
+      </div>
+
+      <div class="toolrow">
+        <div class="tool"><span class="sw"><i></i></span>Web search</div>
+        <div class="tool"><span class="plus">+</span>Capture<span class="n">Ctrl R</span></div>
+        <div class="tool cam"><span class="plus">+</span>New session</div>
+      </div>
+
+      <div class="actions">
+        <div class="act translate active"><div class="row"><i class="glyph"></i><span class="hint">1</span></div>Translate</div>
+        <div class="act explain"><div class="row"><i class="glyph"></i><span class="hint">2</span></div>Explain</div>
+        <div class="act grammar"><div class="row"><i class="glyph"></i><span class="hint">3</span></div>Fix grammar</div>
+      </div>
+
+      <div class="ask">
+        <span>Ask anything about this capture&hellip;</span>
+        <span class="caret"></span>
+        <div class="send">&crarr;</div>
+      </div>
+
+      <div class="answer">
+        <div class="ans-label"><span class="tag">Translate</span><span class="bar"></span><span class="thinking"><span class="dots"><i></i><i></i><i></i></span>streaming</span></div>
+        <div class="ans-body">
+          <div class="src">El informe trimestral muestra un aumento del 12% en los ingresos durante el tercer trimestre&hellip;</div>
+          <p>The quarterly report shows a <strong>12% increase in revenue</strong> during the third quarter, driven mainly by the new subscription plan&hellip;<span class="cursor"></span></p>
+        </div>
+      </div>
+
+      <div class="panel-foot">
+        <span>openai &middot; gpt-4o-mini &middot; 1.2s</span>
+        <div class="foot-btn"><span>Stop</span><span>Copy</span><span class="primary">Retry</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>Panel grows</b>Height animates up to <code>~70%</code> of screen, then the answer area scrolls on its own.</div>
+    <div class="note"><b>Stop is real</b>Cancel the HTTP stream; partial text stays, the turn is kept in the file and <code>Retry</code> re-runs the same action.</div>
+    <div class="note"><b>Every turn is persisted</b>The user message is written before the request, the assistant message when the stream ends, so a crash never loses the thread.</div>
+    <div class="note"><b>Image budget</b>New captures are downscaled to max 1568px / JPEG q85 before upload; older captures in the same thread are re-sent cheaply as <code>detail: low</code>.</div>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 4 : free prompt ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">04</span><h2>Result panel &mdash; a real thread</h2><span class="sub">follow-ups, a second capture, everything persisted</span></div>
+  <div class="screen">
+    <div class="desktop">
+      <div class="gnome-bar"><span class="g-act">Activities</span><span class="g-app">Files</span><span class="g-right">Fri Nov 14&nbsp;&nbsp;11:28&nbsp;&nbsp;EN&nbsp;&nbsp;100%&nbsp;&nbsp;&#9662;</span></div>
+      <div class="win" style="left:60px;top:70px;width:700px;height:560px">
+        <div class="wbar"><i class="wdot"></i><i class="wdot"></i><i class="wdot"></i></div>
+        <div class="wbody"><div class="ln w40 hi"></div><div class="ln w90"></div><div class="ln w80"></div><div class="block" style="height:150px"></div><div class="ln w90"></div><div class="ln w60"></div></div>
+      </div>
+      <div class="win" style="left:820px;top:430px;width:390px;height:300px">
+        <div class="wbar"><i class="wdot"></i><i class="wdot"></i><i class="wdot"></i></div>
+        <div class="wbody"><div class="ln w40"></div><div class="ln w90"></div><div class="ln w60"></div></div>
+      </div>
+    </div>
+    <div class="overlay-dim" style="background:rgba(6,8,12,.30)"></div>
+
+    <div class="panel" style="left:742px;top:78px">
+      <div class="panel-head">
+        <div class="thumb-stack">
+          <i class="behind"></i>
+          <div class="thumb">CROP</div>
+          <span class="count">2</span>
+        </div>
+        <div class="head-meta">
+          <div class="t1">Q3 invoice &mdash; revenue note <span class="cv">&#9662;</span></div>
+          <div class="t2">2 captures &middot; 4 turns &middot; saved</div>
+        </div>
+        <div class="icon-btn">&times;</div>
+      </div>
+
+      <div class="toolrow">
+        <div class="tool"><span class="sw"><i></i></span>Web search</div>
+        <div class="tool"><span class="plus">+</span>Capture<span class="n">Ctrl R</span></div>
+        <div class="tool cam"><span class="plus">+</span>New session</div>
+      </div>
+
+      <div class="actions">
+        <div class="act translate"><div class="row"><i class="glyph"></i><span class="hint">1</span></div>Translate</div>
+        <div class="act explain"><div class="row"><i class="glyph"></i><span class="hint">2</span></div>Explain</div>
+        <div class="act grammar"><div class="row"><i class="glyph"></i><span class="hint">3</span></div>Fix grammar</div>
+      </div>
+
+      <div class="thread">
+        <div class="turn user">
+          <div class="av">Y</div>
+          <div class="bubble">
+            <div class="who"><span class="tag t">Translate</span><span class="tstamp">11:28</span></div>
+            <div class="crops"><div class="crop-mini"><span class="lbl">620 &times; 214</span>invoice</div></div>
+          </div>
+        </div>
+        <div class="turn ai">
+          <div class="av">C</div>
+          <div class="bubble">
+            <div class="who">Assistant<span class="tstamp">1.4s</span></div>
+            <div class="txt"><p>The quarterly report shows a <strong>12% increase in revenue</strong> during the third quarter, driven mainly by the new subscription plan.</p></div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="turn user">
+          <div class="av">Y</div>
+          <div class="bubble">
+            <div class="who">Follow-up<span class="tstamp">11:31</span></div>
+            <div class="crops">
+              <div class="crop-mini"><span class="lbl">620 &times; 214</span>invoice</div>
+              <div class="crop-mini n2"><span class="new">NEW</span><span class="lbl">410 &times; 180</span>chart</div>
+            </div>
+            <div class="txt" style="color:#b9c1d0">What is the main risk mentioned here? Compare it with the chart I just added.</div>
+          </div>
+        </div>
+        <div class="turn ai">
+          <div class="av">C</div>
+          <div class="bubble">
+            <div class="who">Assistant<span class="tstamp">2.6s</span></div>
+            <div class="txt">
+              <p><em style="color:#8b93a3;font-style:normal">The text flags one explicit risk:</em> the 12% growth depends on a single subscription tier still in its discounted introductory period. Renewal at full price is the downside case.</p>
+              <p>The chart agrees &mdash; the amber series flattens right after the promo window, so the run-rate does not hold without new sign-ups.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ask" style="margin:11px 12px 0">
+        <span>Follow up&hellip;</span>
+        <span class="caret"></span>
+        <div class="send">&crarr;</div>
+      </div>
+
+      <div class="panel-foot">
+        <span>anthropic &middot; claude-sonnet-4 &middot; 4 turns</span>
+        <div class="foot-btn"><span>Copy</span><span class="primary">Retry</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>Add a capture mid-thread</b><code>Ctrl</code>+<code>R</code> (or <b>+ Capture</b>) opens the selection layer again and <b>appends</b> the crop to the current turn instead of replacing anything.</div>
+    <div class="note"><b>Context is the thread</b>The model receives all captures of the session, oldest downscaled to <code>detail: low</code>; a per-session token budget trims from the top.</div>
+    <div class="note"><b>Quick actions are editable</b>Labels come from settings (<code>actions[].title</code>) and the prompt from <code>actions[].prompt</code>; <code>{lang}</code> and <code>{text}</code> are substituted.</div>
+    <div class="note"><b>Reopen later</b>The same panel is restored from the session file after a restart &mdash; turns, crops and sources all come back.</div>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 5 : session selector ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">05</span><h2>Session selector</h2><span class="sub">conversations live in files and are listed, searched and reopened</span></div>
+  <div class="screen">
+    <div class="desktop">
+      <div class="gnome-bar"><span class="g-act">Activities</span><span class="g-app">Files</span><span class="g-right">Fri Nov 14&nbsp;&nbsp;11:28&nbsp;&nbsp;EN&nbsp;&nbsp;100%&nbsp;&nbsp;&#9662;</span></div>
+      <div class="win" style="left:80px;top:80px;width:640px;height:420px">
+        <div class="wbar"><i class="wdot"></i><i class="wdot"></i><i class="wdot"></i></div>
+        <div class="wbody"><div class="ln w40"></div><div class="ln w90"></div><div class="ln w80"></div><div class="block" style="height:180px"></div></div>
+      </div>
+    </div>
+    <div class="overlay-dim" style="background:rgba(6,8,12,.40)"></div>
+
+    <div class="panel" style="left:760px;top:96px">
+      <div class="panel-head">
+        <div class="thumb-stack">
+          <i class="behind"></i>
+          <div class="thumb">CROP</div>
+          <span class="count">2</span>
+        </div>
+        <div class="head-meta">
+          <div class="t1" style="color:#fff">Q3 invoice &mdash; revenue note <span class="cv">&#9652;</span></div>
+          <div class="t2">2 captures &middot; 4 turns &middot; saved</div>
+        </div>
+        <div class="icon-btn">&times;</div>
+      </div>
+      <div class="toolrow">
+        <div class="tool"><span class="sw"><i></i></span>Web search</div>
+        <div class="tool"><span class="plus">+</span>Capture<span class="n">Ctrl R</span></div>
+        <div class="tool cam"><span class="plus">+</span>New session</div>
+      </div>
+      <div class="actions">
+        <div class="act translate"><div class="row"><i class="glyph"></i><span class="hint">1</span></div>Translate</div>
+        <div class="act explain"><div class="row"><i class="glyph"></i><span class="hint">2</span></div>Explain</div>
+        <div class="act grammar"><div class="row"><i class="glyph"></i><span class="hint">3</span></div>Grammar</div>
+      </div>
+      <div class="ask"><span>Ask anything about this capture&hellip;</span><span class="caret"></span><div class="send">&crarr;</div></div>
+      <div class="panel-foot"><span>openai &middot; gpt-4o-mini</span><div class="foot-btn"><span>Esc</span><span>Close</span></div></div>
+    </div>
+
+    <div class="session-pop" style="left:760px;top:392px">
+      <div class="sp-head">Sessions<span class="new">+ New session</span></div>
+      <div class="sp-search">&#9906;&nbsp; Search titles and messages&hellip;</div>
+      <div class="sp-row on">
+        <div class="th">CROP</div>
+        <div class="meta">
+          <div class="t">Q3 invoice &mdash; revenue note</div>
+          <div class="p">2 captures &middot; &ldquo;compare it with the chart&rdquo;</div>
+        </div>
+        <div class="time">now</div>
+      </div>
+      <div class="sp-row">
+        <div class="th">CROP</div>
+        <div class="meta">
+          <div class="t">Rust error &mdash; borrow checker</div>
+          <div class="p">1 capture &middot; &ldquo;why is the borrow still alive?&rdquo;</div>
+        </div>
+        <div class="time">2h</div>
+      </div>
+      <div class="sp-row">
+        <div class="th">CROP</div>
+        <div class="meta">
+          <div class="t">Japanese menu &mdash; allergies</div>
+          <div class="p">3 captures &middot; &ldquo;which of these has no shellfish?&rdquo;</div>
+        </div>
+        <div class="time">Tue</div>
+      </div>
+      <div class="sp-row">
+        <div class="th">CROP</div>
+        <div class="meta">
+          <div class="t">Kubernetes dashboard &mdash; web search</div>
+          <div class="p">1 capture &middot; &ldquo;is this the CVE they mention?&rdquo; &middot; 4 sources</div>
+        </div>
+        <div class="time">Mon</div>
+      </div>
+      <div class="sp-foot"><span><b>12</b> sessions</span><span>Stored in <b>~/.local/share/chinchilla</b></span><span style="margin-left:auto">Delete&hellip;</span></div>
+    </div>
+
+    <div class="card-block" style="left:80px;top:540px;width:600px">
+      <h4>What a session file holds &mdash; <code>sessions/&lt;ulid&gt;.json</code></h4>
+      <div class="modlist">
+        <div><b>title</b><span>auto from the first prompt, editable in the header</span></div>
+        <div><b>provider</b><span>provider id + model used for the session</span></div>
+        <div><b>turns[]</b><span>role, text, action id, timestamp, latency, tokens</span></div>
+        <div><b>captures[]</b><span>id, size, sha256, png path under <code>captures/</code></span></div>
+        <div><b>sources[]</b><span>url, title, snippet &mdash; deduped per session</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>Selector, not a page</b>It hangs off the session title as a popover so the panel never navigates away from the thread; <code>&uarr;</code>/<code>&darr;</code> + <code>Enter</code> work.</div>
+    <div class="note"><b>New session, same flow</b>Creates the file lazily on the first capture; the panel clears, the hotkey keeps working, the previous session is one click away.</div>
+    <div class="note"><b>Search across files</b>The popover filters on title, message text and source URLs &mdash; a tiny index built at startup, no database.</div>
+    <div class="note"><b>Retention</b>Configurable: keep forever, keep 30 days, or delete on quit. "Clear all" lives in Settings &rsaquo; Data.</div>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 5 : tray + settings ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">06</span><h2>Tray menu &amp; settings &mdash; General</h2><span class="sub">the only "chrome" surfaces the app has</span></div>
+  <div class="screen">
+    <div class="desktop">
+      <div class="gnome-bar"><span class="g-act">Activities</span><span class="g-app">Files</span><span class="g-right">Fri Nov 14&nbsp;&nbsp;11:28&nbsp;&nbsp;EN&nbsp;&nbsp;100%&nbsp;&nbsp;&#9662;</span></div>
+    </div>
+
+    <div class="settings">
+      <div class="settings-head">
+        <div class="logo">C</div> Settings
+        <div class="tabs"><span class="on">General</span><span>Actions</span><span>Providers</span><span>Web</span><span>Data</span></div>
+      </div>
+      <div class="settings-body">
+        <div class="lbl">Capture shortcut</div>
+        <div class="field">Ctrl + Alt + A <span class="caret2">change</span></div>
+
+        <div class="lbl">Provider</div>
+        <div class="field">OpenAI <span class="caret2">v</span></div>
+
+        <div class="lbl">Model</div>
+        <div class="field">gpt-4o-mini <span class="caret2">v</span></div>
+
+        <div class="lbl">Target language</div>
+        <div class="field">English <span class="caret2">v</span></div>
+
+        <div class="lbl">Default action</div>
+        <div class="field">Translate <span class="caret2">v</span></div>
+
+        <div class="lbl">Start at login</div>
+        <div class="field">Enabled <span class="switch on"><i></i></span></div>
+
+        <div class="lbl">Save sessions</div>
+        <div class="field">On &mdash; one file per conversation <span class="switch on"><i></i></span></div>
+
+        <div class="lbl">Retention</div>
+        <div class="field">Forever <span class="caret2">v</span></div>
+      </div>
+      <div class="settings-foot"><span>Cancel</span><span class="primary">Save</span></div>
+    </div>
+
+    <div class="card-block" style="left:150px;top:566px;width:560px">
+      <h4>Where the shortcut actually lives &mdash; GNOME Settings &rsaquo; Keyboard &rsaquo; Custom Shortcuts</h4>
+      <div class="kbdrow">
+        <span class="kn">Chinchilla Capture</span>
+        <span class="kc">chinchilla capture</span>
+        <span class="kk"><i>Ctrl</i><i>Alt</i><i>A</i></span>
+      </div>
+      <p class="knote">Installed on first run by <code>chinchilla install-shortcut</code>, or added by hand in ten seconds. This is the only piece of the app the compositor knows about.</p>
+    </div>
+
+    <div class="card-block" style="right:16px;top:356px;width:236px">
+      <h4>On disk</h4>
+      <p class="knote" style="line-height:1.95">
+        <code>~/.config/chinchilla/</code><br>
+        &nbsp;&nbsp;<code>settings.json</code><br>
+        <code>~/.local/share/chinchilla/</code><br>
+        &nbsp;&nbsp;<code>sessions/&lt;ulid&gt;.json</code><br>
+        &nbsp;&nbsp;<code>captures/&lt;ulid&gt;.jpg</code><br>
+        <code>~/.local/state/chinchilla/</code><br>
+        &nbsp;&nbsp;<code>daemon.log</code>
+      </p>
+    </div>
+
+    <div class="tray">
+      <div class="item on"><span>Capture area</span><span class="short">C+A+A</span></div>
+      <div class="item"><span>New session</span><span class="short">C+A+N</span></div>
+      <div class="item"><span>Sessions&hellip;</span><span class="short">C+A+S</span></div>
+      <div class="sep"></div>
+      <div class="item"><span>Settings</span><span class="short"></span></div>
+      <div class="item dim"><span>About</span><span class="short"></span></div>
+      <div class="sep"></div>
+      <div class="item"><span>Quit</span><span class="short"></span></div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>Tray = lifecycle</b>Closing every panel keeps the daemon alive; Quit is the only exit. Tray icon is the single-instance lock.</div>
+    <div class="note"><b>Secrets</b>One API key per provider in <code>libsecret</code> / GNOME Keyring, never a plaintext JSON in <code>~/.config</code>. The custom provider reuses <code>LLM_API_KEY</code>.</div>
+    <div class="note"><b>Settings are a file, not a dialog</b><code>~/.config/chinchilla/settings.json</code> is the source of truth; the window is a thin editor, so CLI and GUI never disagree.</div>
+    <div class="note"><b>Session shortcuts too</b><code>Ctrl+Alt+N</code> opens a fresh session, <code>Ctrl+Alt+S</code> jumps to the selector &mdash; both are GNOME custom shortcuts like the capture one.</div>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 7 : settings / actions ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">07</span><h2>Settings &mdash; Actions</h2><span class="sub">the three quick buttons are data, not code</span></div>
+  <div class="screen">
+    <div class="desktop">
+      <div class="gnome-bar"><span class="g-act">Activities</span><span class="g-app">Files</span><span class="g-right">Fri Nov 14&nbsp;&nbsp;11:28&nbsp;&nbsp;EN&nbsp;&nbsp;100%&nbsp;&nbsp;&#9662;</span></div>
+    </div>
+
+    <div class="settings wide" style="left:110px;top:52px">
+      <div class="settings-head">
+        <div class="logo">C</div> Settings
+        <div class="tabs"><span>General</span><span class="on">Actions</span><span>Providers</span><span>Web</span><span>Data</span></div>
+      </div>
+      <div class="settings-body one">
+        <div class="grp">Action 1 &middot; key 1 &middot; default on Enter</div>
+        <div class="act-row">
+          <div class="ar-head">
+            <i class="glyph" style="background:#4c8dff"></i>
+            <span class="nm">Title</span>
+            <span class="reset">Reset to default</span>
+          </div>
+          <div class="field">Translate</div>
+          <div class="ta">Translate the text in this screenshot into <span class="v">{lang}</span>.
+Keep layout semantics: preserve line breaks, tables and numbered lists.
+If a term is ambiguous, prefer the domain-specific reading.</div>
+        </div>
+
+        <div class="grp">Action 2 &middot; key 2</div>
+        <div class="act-row">
+          <div class="ar-head">
+            <i class="glyph" style="background:#a78bfa"></i>
+            <span class="nm">Title</span>
+            <span class="reset">Reset to default</span>
+          </div>
+          <div class="field">Explain</div>
+          <div class="ta">Explain what is shown here to a <span class="v">{level}</span> reader.
+Start with one sentence of context, then unpack the key terms.
+Call out anything that looks wrong, risky or outdated.</div>
+        </div>
+
+        <div class="grp">Action 3 &middot; key 3</div>
+        <div class="act-row">
+          <div class="ar-head">
+            <i class="glyph" style="background:#34d399"></i>
+            <span class="nm">Title</span>
+            <span class="reset">Reset to default</span>
+          </div>
+          <div class="field">Fix grammar</div>
+          <div class="ta">Transcribe the visible text, then return a corrected version in <span class="v">{lang}</span>.
+Show a compact before / after diff and one line per fix. Do not restate the whole text.</div>
+        </div>
+
+        <div class="hintline">Variables available in prompts: <code>{lang}</code>, <code>{level}</code>, <code>{text}</code> (OCR of the crop), <code>{sources}</code>. Prompts are plain text files under <code>prompts/</code>, copied on first run.</div>
+      </div>
+      <div class="settings-foot"><span>Reset all</span><span>Cancel</span><span class="primary">Save</span></div>
+    </div>
+
+    <div class="card-block" style="left:840px;top:70px;width:390px">
+      <h4>Contract &mdash; how an action reaches the model</h4>
+      <div class="modlist">
+        <div><b>id</b><span>translate | explain | grammar &mdash; stable, never renamed by the user</span></div>
+        <div><b>title</b><span>what the button and the thread label show (editable, &le; 18 chars)</span></div>
+        <div><b>prompt</b><span>system instruction for that turn, sent with the captures and the thread</span></div>
+        <div><b>web_default</b><span>per action: whether web search is preselected (e.g. off for Translate)</span></div>
+      </div>
+    </div>
+
+    <div class="card-block" style="left:840px;top:322px;width:390px">
+      <h4>Live in the panel &mdash; same data, no preview pane</h4>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px">
+        <div class="act translate"><div class="row"><i class="glyph"></i><span class="hint">1</span></div>Translate ES</div>
+        <div class="act explain"><div class="row"><i class="glyph"></i><span class="hint">2</span></div>Explain it</div>
+        <div class="act grammar"><div class="row"><i class="glyph"></i><span class="hint">3</span></div>Fix &amp; shorten</div>
+      </div>
+      <p class="knote">Titles render as typed; past 18 characters they clamp with an ellipsis instead of reflowing the row.</p>
+    </div>
+
+    <div class="card-block" style="left:840px;top:480px;width:390px">
+      <h4>Where the text lives</h4>
+      <div class="modlist">
+        <div><b>defaults</b><span><code>chinchilla/prompts.py</code></span></div>
+        <div><b>overrides</b><span><code>settings.json &rarr; actions[]</code></span></div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>Editing is live</b>Save rewrites <code>settings.json</code>; open panels re-read the labels on the next paint, no restart.</div>
+    <div class="note"><b>Defaults are recoverable</b>Each row keeps a <b>Reset to default</b>; the shipped prompts live in <code>chinchilla/prompts.py</code> so a bad edit is one click from fixed.</div>
+    <div class="note"><b>Title length guard</b>Titles are clamped to 18 characters and stripped of newlines so the three-cell action row never reflows.</div>
+    <div class="note"><b>Validation</b>A prompt must reference the capture or the thread cannot answer; an empty prompt falls back to the default instead of sending nothing.</div>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 8 : settings / providers + web ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">08</span><h2>Settings &mdash; Providers &amp; web search</h2><span class="sub">four providers, one adapter; search is an MCP tool belt</span></div>
+  <div class="screen">
+    <div class="desktop">
+      <div class="gnome-bar"><span class="g-act">Activities</span><span class="g-app">Files</span><span class="g-right">Fri Nov 14&nbsp;&nbsp;11:28&nbsp;&nbsp;EN&nbsp;&nbsp;100%&nbsp;&nbsp;&#9662;</span></div>
+    </div>
+
+    <div class="settings wide" style="left:60px;top:44px">
+      <div class="settings-head">
+        <div class="logo">C</div> Settings
+        <div class="tabs"><span>General</span><span>Actions</span><span class="on">Providers</span><span>Web</span><span>Data</span></div>
+      </div>
+      <div class="settings-body one">
+        <div class="grp">Provider</div>
+        <div class="prov-grid">
+          <div class="prov"><span class="lg" style="background:#e6e9ef">OA</span><div><div>OpenAI</div><div class="sub2">gpt-4o-mini &middot; vision</div></div><span class="tag2 ok">key set</span></div>
+          <div class="prov"><span class="lg" style="background:#d4a27f">AN</span><div><div>Anthropic</div><div class="sub2">claude-sonnet-4 &middot; vision</div></div><span class="tag2 ok">key set</span></div>
+          <div class="prov"><span class="lg" style="background:#8b93a3">OR</span><div><div>OpenRouter</div><div class="sub2">any routed model</div></div><span class="tag2 ok">key set</span></div>
+          <div class="prov on"><span class="lg" style="background:#f0b429">CU</span><div><div>Custom / OpenAI-compatible</div><div class="sub2">from <code>.env</code> &middot; deepseek-v4.1-flash</div></div><span class="tag2 ok">.env</span></div>
+        </div>
+
+        <div class="grp">Custom endpoint</div>
+        <div class="field mono">LLM_BASE_URL &nbsp;<span style="color:#7d879a">https://&hellip;/v1</span><span class="caret2">read from .env</span></div>
+        <div class="field mono">LLM_MODEL &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#7d879a">deepseek-v4.1-flash-1017</span><span class="caret2">editable</span></div>
+        <div class="field mono">LLM_API_KEY &nbsp;<span style="color:#7d879a">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</span><span class="caret2">keyring</span></div>
+        <div class="hintline">Any OpenAI-compatible gateway works: Aliyun MaaS, vLLM, LM Studio, Ollama (<code>/v1</code>), Groq. Base URL + model + key, nothing else.</div>
+
+        <div class="field good" style="height:32px"><span class="ok">&#10003;</span><span>Connection OK</span><span style="margin-left:auto;color:#7d879a;font:10px ui-monospace,monospace">412 ms &middot; vision ok</span></div>
+      </div>
+      <div class="settings-foot"><span>Test connection</span><span>Cancel</span><span class="primary">Save</span></div>
+    </div>
+
+    <div class="card-block" style="left:60px;top:604px;width:700px">
+      <h4>Key resolution &mdash; nothing secret in the repo</h4>
+      <div class="modlist">
+        <div><b>order</b><span>keyring &rarr; <code>.env</code> (custom only) &rarr; environment variable &rarr; unset</span></div>
+        <div><b>custom</b><span><code>LLM_BASE_URL</code> + <code>LLM_MODEL</code> + <code>LLM_API_KEY</code>; values are never echoed in the UI</span></div>
+        <div><b>scopes</b><span>one keyring entry per provider id, so switching providers never overwrites a key</span></div>
+      </div>
+    </div>
+
+    <div class="card-block" style="left:790px;top:44px;width:440px">
+      <h4>Web search &mdash; MCP stdio server</h4>
+      <div class="modlist">
+        <div><b>command</b><span><code>npx -y dsh-google-chrome-search mcp</code> (absolute path, from <code>WEBSEARCH_MCP_COMMAND</code>)</span></div>
+        <div><b>env</b><span><code>CHROME_PATH</code>, <code>GSEARCH_PROFILE=~/.dsh-chrome-google</code></span></div>
+        <div><b>tools</b><span><code>search</code>, <code>fetch</code>, <code>search_and_fetch</code>, <code>account</code></span></div>
+        <div><b>fallback</b><span>server or Chrome missing &rarr; the turn runs without search, said once</span></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+        <div class="tool on" style="height:24px"><span class="sw"><i></i></span>Enable web search</div>
+        <div class="tool" style="height:24px">Auto-share page URL</div>
+        <div class="tool" style="height:24px"><span class="plus">&#10003;</span>Test search</div>
+      </div>
+    </div>
+
+    <div class="card-block" style="left:790px;top:336px;width:440px">
+      <h4>One interface, four transports</h4>
+      <div class="modlist">
+        <div><b>chat()</b><span><code>chat(messages, tools=None, stream=True) -&gt; Iterator[Event]</code></span></div>
+        <div><b>openai.py</b><span>OpenAI, OpenRouter and custom base URLs: one client, only <code>base_url</code> differs</span></div>
+        <div><b>anthropic.py</b><span>messages API, images as base64 blocks, tool schema mapped</span></div>
+      </div>
+    </div>
+
+    <div class="card-block" style="left:790px;top:560px;width:440px">
+      <h4>Session &amp; turn, not a single call</h4>
+      <div class="modlist">
+        <div><b>session</b><span>provider, model, captures, sources &mdash; the file is the API</span></div>
+        <div><b>turn</b><span>action id or free text, the captures it references, the reply</span></div>
+        <div><b>retry</b><span>replays the turn against the same provider, or another one from the selector</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>No stored keys in the repo</b><code>.env</code> is read for the custom provider only; the file is in <code>.gitignore</code> and the UI never shows the value, only a masked field and a status.</div>
+    <div class="note"><b>Provider per session</b>A session remembers its provider and model, so old threads still render the model badge they were produced with.</div>
+    <div class="note"><b>Web search scope</b>Search results are for the current turn; <code>sources[]</code> accumulate on the session and are deduped by URL.</div>
+    <div class="note"><b>Privacy</b>Searching drives your local Chrome with a dedicated profile. The app never opens your personal Google pages; only public results are fetched.</div>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 9 : web search answer ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">09</span><h2>Web search in the panel</h2><span class="sub">tool activity, inline citations, sources you can trust</span></div>
+  <div class="screen">
+    <div class="desktop">
+      <div class="gnome-bar"><span class="g-act">Activities</span><span class="g-app">Files</span><span class="g-right">Fri Nov 14&nbsp;&nbsp;11:28&nbsp;&nbsp;EN&nbsp;&nbsp;100%&nbsp;&nbsp;&#9662;</span></div>
+    </div>
+    <div class="overlay-dim" style="background:rgba(6,8,12,.34)"></div>
+
+    <div class="panel" style="left:806px;top:56px">
+      <div class="panel-head">
+        <div class="thumb-stack">
+          <i class="behind"></i>
+          <div class="thumb">CROP</div>
+          <span class="count">1</span>
+        </div>
+        <div class="head-meta">
+          <div class="t1">K8s dashboard &mdash; this CVE? <span class="cv">&#9662;</span></div>
+          <div class="t2">web search on &middot; 3 tools &middot; 5.8s</div>
+        </div>
+        <div class="icon-btn">&times;</div>
+      </div>
+
+      <div class="toolrow">
+        <div class="tool on"><span class="sw"><i></i></span>Web search</div>
+        <div class="tool"><span class="plus">+</span>Capture<span class="n">Ctrl R</span></div>
+        <div class="tool cam"><span class="plus">+</span>New session</div>
+      </div>
+
+      <div class="actions">
+        <div class="act translate"><div class="row"><i class="glyph"></i><span class="hint">1</span></div>Translate</div>
+        <div class="act explain active"><div class="row"><i class="glyph"></i><span class="hint">2</span></div>Explain</div>
+        <div class="act grammar"><div class="row"><i class="glyph"></i><span class="hint">3</span></div>Fix grammar</div>
+      </div>
+
+      <div class="thread" style="padding-top:9px">
+        <div class="turn user">
+          <div class="av">Y</div>
+          <div class="bubble">
+            <div class="who"><span class="tag">Explain</span><span class="tag" style="color:#4c8dff">+ web</span><span class="tstamp">11:34</span></div>
+            <div class="crops"><div class="crop-mini"><span class="lbl">740 &times; 220</span>dashboard</div></div>
+            <div class="txt" style="color:#b9c1d0">Is this the CVE they are patching in the changelog?</div>
+          </div>
+        </div>
+
+        <div class="turn ai">
+          <div class="av">C</div>
+          <div class="bubble">
+            <div class="who">Assistant<span class="tstamp">5.8s</span></div>
+            <div class="searching">
+              <div class="step"><span class="tick">&#10003;</span><code>search</code> &ldquo;kubernetes 1.31.2 CVE changelog&rdquo;<span class="el">1.4s</span></div>
+              <div class="step"><span class="tick">&#10003;</span><code>fetch</code> github.com/kubernetes&hellip;/CHANGELOG<span class="el">2.1s</span></div>
+              <div class="step"><span class="tick">&#10003;</span><code>fetch</code> nvd.nist.gov/vuln/detail/CVE-2025&hellip;<span class="el">1.9s</span></div>
+            </div>
+            <div class="txt">
+              <p>Yes. The dashboard shows <strong>v1.31.2</strong>, and the changelog entry you are looking at bumps the kubelet for <strong>CVE-2025-0426</strong> <span class="cite">1</span> &mdash; a node-level denial of service via unbounded memory in the <code>pods/log</code> endpoint <span class="cite">2</span>.</p>
+              <p>Fixed in <strong>1.30.6 / 1.31.2 / 1.32.0</strong> <span class="cite">1</span>. Your cluster reports 1.31.2, so it is patched; the node image tag matters more than the panel value.</p>
+            </div>
+            <div class="sources">
+              <div class="sh">Sources &middot; 2</div>
+              <div class="s"><i>[1]</i><span>CHANGELOG-1.31.md &mdash; v1.31.2 &middot; github.com</span></div>
+              <div class="s"><i>[2]</i><span>CVE-2025-0426 detail &middot; nvd.nist.gov</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ask" style="margin:11px 12px 0">
+        <span>Follow up&hellip;</span>
+        <span class="caret"></span>
+        <div class="send">&crarr;</div>
+      </div>
+
+      <div class="panel-foot">
+        <span>custom &middot; deepseek-v4.1-flash &middot; 4.2k tok</span>
+        <div class="foot-btn"><span>Sources</span><span>Copy</span><span class="primary">Retry</span></div>
+      </div>
+    </div>
+
+    <div class="card-block" style="left:60px;top:70px;width:500px">
+      <h4>What the model actually sees</h4>
+      <div class="modlist">
+        <div><b>tools</b><span>only when the toggle is on and the provider supports function calling</span></div>
+        <div><b>budget</b><span>max 4 tool calls / 20s, then it must answer with what it has</span></div>
+        <div><b>citations</b><span>every fetched URL is numbered; the renderer turns <code>[n]</code> into chips</span></div>
+      </div>
+    </div>
+
+    <div class="card-block" style="left:60px;top:256px;width:500px">
+      <h4>Tool loop &mdash; bounded on purpose</h4>
+      <div class="modlist">
+        <div><b>plan</b><span>the model decides: answer from the image, or search first</span></div>
+        <div><b>search</b><span>one query, up to 8 organic results, snippets trimmed to 800 chars</span></div>
+        <div><b>fetch</b><span>top 1-2 pages, readable text capped at 6k chars each</span></div>
+        <div><b>stop</b><span>4 calls, 20s wall clock, or the user presses Stop &mdash; then it answers</span></div>
+      </div>
+    </div>
+
+    <div class="card-block" style="left:60px;top:476px;width:500px">
+      <h4>Rendering rules</h4>
+      <div class="modlist">
+        <div><b>chips</b><span>a <code>[n]</code> with no matching result is scrubbed before paint</span></div>
+        <div><b>sources</b><span>deduped by URL per session; title + domain, hover shows the query</span></div>
+        <div><b>footer</b><span><b>Sources</b> reopens the list after the answer scrolls away</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>Tool activity is visible</b>Each call shows its name, its argument and its duration while running, so a slow search never looks like a hung panel.</div>
+    <div class="note"><b>Citations are computed, not invented</b>The sources list is built from the tool results; a <code>[3]</code> that no tool produced is scrubbed before rendering.</div>
+    <div class="note"><b>No search, no lie</b>If the MCP server is missing the panel shows one inline line: "web search unavailable &mdash; answering from the image only".</div>
+    <div class="note"><b>Cost guard</b>Web turns run on the session provider but are capped harder: search snippets are trimmed to 800 chars, page fetches to 6k.</div>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 6 : anatomy ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">10</span><h2>Panel anatomy &amp; runtime</h2><span class="sub">spec numbers for the implementation</span></div>
+  <div class="screen">
+    <div class="desktop">
+      <div class="gnome-bar"><span class="g-act">Activities</span><span class="g-app">Files</span><span class="g-right">Fri Nov 14&nbsp;&nbsp;11:28&nbsp;&nbsp;EN&nbsp;&nbsp;100%&nbsp;&nbsp;&#9662;</span></div>
+    </div>
+    <div class="overlay-dim" style="background:rgba(6,8,12,.45)"></div>
+
+    <div class="panel" style="left:56px;top:30px">
+      <div class="panel-head">
+        <div class="thumb-stack">
+          <i class="behind"></i>
+          <div class="thumb">CROP</div>
+          <span class="count">2</span>
+        </div>
+        <div class="head-meta">
+          <div class="t1">Q3 invoice &mdash; revenue note <span class="cv">&#9662;</span></div>
+          <div class="t2">2 captures &middot; 4 turns &middot; saved</div>
+        </div>
+        <div class="icon-btn">&times;</div>
+      </div>
+      <div class="toolrow">
+        <div class="tool on"><span class="sw"><i></i></span>Web</div>
+        <div class="tool"><span class="plus">+</span>Capture</div>
+        <div class="tool cam"><span class="plus">+</span>Session</div>
+      </div>
+      <div class="actions">
+        <div class="act translate active"><div class="row"><i class="glyph"></i><span class="hint">1</span></div>Translate</div>
+        <div class="act explain"><div class="row"><i class="glyph"></i><span class="hint">2</span></div>Explain</div>
+        <div class="act grammar"><div class="row"><i class="glyph"></i><span class="hint">3</span></div>Fix grammar</div>
+      </div>
+      <div class="ask filled">
+        <span>Ask anything about this capture&hellip;</span>
+        <div class="send">&crarr;</div>
+      </div>
+      <div class="answer">
+        <div class="ans-label"><span class="tag">Translate</span><span class="bar"></span><span>1.2s</span></div>
+        <div class="ans-body"><p>The quarterly report shows a 12% increase in revenue&hellip;</p></div>
+      </div>
+      <div class="panel-foot">
+        <span>openai &middot; gpt-4o-mini</span>
+        <div class="foot-btn"><span>Copy</span><span class="primary">Retry</span></div>
+      </div>
+    </div>
+
+    <div class="anno" style="left:22px;top:47px">1</div>
+    <div class="anno" style="left:22px;top:104px">2</div>
+    <div class="anno" style="left:22px;top:146px">3</div>
+    <div class="anno" style="left:22px;top:205px">4</div>
+    <div class="anno" style="left:22px;top:255px">5</div>
+
+    <div class="card-block" style="left:56px;top:340px;width:404px">
+      <h4>Module map (one process, no server)</h4>
+      <div class="modlist">
+        <div><b>ui/overlay.py</b><span>selection layer, rubber band, loupe</span></div>
+        <div><b>ui/panel.py</b><span>frameless panel, thread, actions, stream</span></div>
+        <div><b>ui/tray.py</b><span>lifecycle, single-instance lock</span></div>
+        <div><b>core/capture.py</b><span>portal grab, DPI map, crop encode</span></div>
+        <div><b>core/llm.py</b><span>provider adapters + streaming events</span></div>
+        <div><b>core/agent.py</b><span>thread &rarr; messages, tools, citations</span></div>
+        <div><b>core/search.py</b><span>MCP stdio client for web search</span></div>
+        <div><b>store/session.py</b><span>session files, captures, retention</span></div>
+        <div><b>store/config.py</b><span>settings, action prompts, keyring</span></div>
+      </div>
+    </div>
+
+    <div class="card-block" style="left:56px;top:584px;width:404px">
+      <h4>Keyboard map &mdash; the mouse is optional</h4>
+      <div class="modlist">
+        <div><b>1 / 2 / 3</b><span>run an action on this turn</span></div>
+        <div><b>Enter</b><span>send the free prompt</span></div>
+        <div><b>Ctrl+R</b><span>add another capture</span></div>
+        <div><b>Ctrl+N</b><span>new session</span></div>
+        <div><b>Ctrl+S</b><span>session selector</span></div>
+        <div><b>Ctrl+W</b><span>toggle web search</span></div>
+        <div><b>Ctrl+C</b><span>copy the answer</span></div>
+        <div><b>Esc</b><span>close panel, stay resident</span></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <h3>Element spec</h3>
+      <ol>
+        <li><span class="n">1</span><div><b>Session header</b> &mdash; capture stack (46&times;32 + count badge), editable title that opens the session selector, <code>&times;</code> closes (Esc).</div></li>
+        <li><span class="n">2</span><div><b>Tool row</b> &mdash; web-search switch, <b>+ Capture</b>, <b>+ Session</b>. 23px pills; state persists per session and is mirrored in the footer while running.</div></li>
+        <li><span class="n">3</span><div><b>Action row</b> &mdash; three equal cells, 7px gap. Labels come from settings; active action keeps a 1px colored ring. Keycaps are hints, not widgets.</div></li>
+        <li><span class="n">4</span><div><b>Free prompt</b> &mdash; 34px tall, always visible, focused on open. Enter sends; follows the thread, not just the last capture.</div></li>
+        <li><span class="n">5</span><div><b>Thread + footer</b> &mdash; turns scroll up to 70% of screen height; tool activity and citations live inside the assistant bubble. Footer: provider, model, tokens, Stop / Copy / Retry.</div></li>
+      </ol>
+
+      <div class="pipe">
+        <span class="p-node">hotkey</span><i>&rarr;</i>
+        <span class="p-node">portal grab</span><i>&rarr;</i>
+        <span class="p-node">crop</span><i>&rarr;</i>
+        <span class="p-node">append to session</span><i>&rarr;</i>
+        <span class="p-node">agent &plusmn; tools</span><i>&rarr;</i>
+        <span class="p-node">panel</span>
+      </div>
+
+      <div class="card-block" style="position:static;width:auto;margin-top:14px">
+        <h4>Build order &mdash; each step is demoable on its own</h4>
+        <div class="build">
+          <div class="b"><i>1</i><span><b>Overlay + fake crop.</b> Draw and commit a box over a hardcoded image.</span></div>
+          <div class="b"><i>2</i><span><b>Real capture.</b> Portal screenshot, DPI-correct crop, PNG in memory.</span></div>
+          <div class="b"><i>3</i><span><b>Panel + thread, canned.</b> Layout, focus order, keys 1/2/3 offline.</span></div>
+          <div class="b"><i>4</i><span><b>Session files.</b> Create, append, reload, list, delete. Restart never loses a thread.</span></div>
+          <div class="b"><i>5</i><span><b>Providers + streaming.</b> OpenAI/Anthropic/OpenRouter/custom behind one adapter.</span></div>
+          <div class="b"><i>6</i><span><b>Editable actions + settings.</b> Titles, prompts, keyring, retention.</span></div>
+          <div class="b"><i>7</i><span><b>Web search.</b> MCP client, tool loop, citations, no-search fallback.</span></div>
+          <div class="b"><i>8</i><span><b>Shortcut install + autostart.</b> The last mile that makes it feel native.</span></div>
+        </div>
+      </div>
+
+      <div class="card-block" style="position:static;width:auto;margin-top:12px">
+        <h4>Request shape &mdash; one agent turn</h4>
+        <div class="modlist">
+          <div><b>messages</b><span>system directive + every turn of the session, oldest first</span></div>
+          <div><b>captures</b><span>image block per crop in the thread; older ones at <code>detail: low</code></span></div>
+          <div><b>tools</b><span>search / fetch / search_and_fetch / account &mdash; only when the toggle is on</span></div>
+          <div><b>reply</b><span>streamed text + tool events; <code>[n]</code> resolved against real result URLs</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>Single process</b>One Python daemon owns the tray, overlay, panels and the MCP subprocess child. One panel per session, reused if open.</div>
+    <div class="note"><b>DPI aware</b>Coordinates kept in logical px for drawing, converted to device px only for cropping the raw frame.</div>
+    <div class="note"><b>Latency budget</b>~40ms portal grab, &lt;60ms overlay paint, first token &lt;1.5s; a web turn adds ~4-6s of tool time, shown per call.</div>
+    <div class="note"><b>Failure path</b>No key, no network, 429, missing MCP server &mdash; all inline cards with the fix next to them, never a dialog.</div>
+  </div>
+</div>
+
+<!-- ============================ SCREEN 7 : states ============================ -->
+<div class="frame">
+  <div class="frame-title"><span class="idx">11</span><h2>States, errors, edge cases</h2><span class="sub">the boring screens that decide if it feels finished</span></div>
+  <div class="screen">
+    <div class="states">
+      <div class="state-col">
+        <div class="state-name">FIRST RUN<small>no provider configured</small></div>
+        <div class="state-card">
+          <div class="mini-panel">
+            <div class="mini-head"><span class="dotamber"></span><span>Pick a provider to start</span></div>
+            <div class="mini-body">
+              The panel, sessions and web search all work offline; only the model call is blocked.
+              <div class="actions-inline"><span class="p">Open settings</span><span>Use .env provider</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="state-name">EMPTY CROP<small>released without dragging</small></div>
+        <div class="state-card">
+          <div class="mini-panel">
+            <div class="mini-head"><span>Nothing selected</span></div>
+            <div class="mini-body">A click under 4&times;4 px closes the layer silently, so a stray hotkey press costs nothing.</div>
+          </div>
+        </div>
+
+        <div class="state-name">ERROR<small>offline / timeout / 429</small></div>
+        <div class="state-card">
+          <div class="mini-panel err">
+            <div class="mini-head"><span class="dotred"></span><span>Could not reach the model</span></div>
+            <div class="mini-body">
+              Request timed out after 30s. Your capture is still here.
+              <div class="actions-inline"><span>Open settings</span><span class="p">Retry</span><span>Copy prompt</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="state-name">CANCELLED<small>Esc during the drag</small></div>
+        <div class="state-card">
+          <div class="mini-panel">
+            <div class="mini-head"><span>Selection cancelled</span></div>
+            <div class="mini-body">The layer disappears with no panel, no request and no history entry. The daemon is back to idle in under a frame.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="state-col">
+        <div class="state-name">SESSION SWITCH<small>opening an old thread</small></div>
+        <div class="state-card">
+          <div class="mini-panel">
+            <div class="mini-head"><span class="logo" style="width:14px;height:14px;border-radius:4px;font-size:8px">C</span><span>Rust error &mdash; borrow checker</span><span style="margin-left:auto;color:#6f7a8e">2 captures</span></div>
+            <div class="mini-body">Turns and crops render from disk in one frame; the model is <b>not</b> called until you ask something. Missing capture files are shown as a grey placeholder, never an error.</div>
+          </div>
+        </div>
+
+        <div class="state-name">LONG TEXT<small>dense page capture</small></div>
+        <div class="state-card">
+          <div class="mini-panel">
+            <div class="mini-head"><span>Translate</span><span style="margin-left:auto;color:#6f7a8e">1 2 3</span></div>
+            <div class="mini-body">
+              The panel grows to 70% of the screen and then the answer area scrolls on its own. Scrollbar is 6px, fades out.
+              <div class="scrollbar-demo"><i></i></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="state-name">EXTRA CAPTURE<small>thread already has one</small></div>
+        <div class="state-card">
+          <div class="mini-panel">
+            <div class="mini-head"><span>Capture appended</span></div>
+            <div class="mini-body">The new crop joins the current turn with a <b>NEW</b> badge; nothing is cleared and the capture count increments.</div>
+          </div>
+        </div>
+
+        <div class="state-name">WEB SEARCH MISSING<small>MCP server or Chrome absent</small></div>
+        <div class="state-card">
+          <div class="mini-panel">
+            <div class="mini-head"><span class="dotamber"></span><span>Web search unavailable</span></div>
+            <div class="mini-body">The toggle stays on but the turn runs from the image alone, with one inline line saying so. <b>Test search</b> in settings points at the failing command.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast"><span class="okdot"></span>Copied to clipboard &middot; 812 characters</div>
+  </div>
+  <div class="notes">
+    <div class="note"><b>No modal dialogs</b>Every failure is inline in the panel, with the fix next to it. Errors never steal focus elsewhere.</div>
+    <div class="note"><b>Nothing is lost</b>Crops live in the session file, so Retry &mdash; or a restart &mdash; never asks the user to select the region again.</div>
+    <div class="note"><b>Timeout</b>30s per model call, 20s tool budget; streaming aborts cleanly and keeps partial output when the provider allows it.</div>
+    <div class="note"><b>Degrade, never block</b>No web search, no key, missing capture &mdash; each one downgrades that turn only; the panel and the session keep working.</div>
+  </div>
+</div>
+
+</body>
+</html>
