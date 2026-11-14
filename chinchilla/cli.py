@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 from . import __version__, paths
@@ -33,6 +34,8 @@ def cmd_version(_args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
+    from .store import config
+
     results = []
     results.append(_check("python", sys.version.split()[0], sys.version_info >= (3, 10)))
     gtk = _gtk_version()
@@ -52,6 +55,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         results.append(_check("paths", f"{paths.data_dir()} writable", writable))
     except OSError as exc:
         results.append(_check("paths", str(exc), False))
+
+    settings = config.load_settings()
+    provider = config.resolved_provider(settings)
+    source = config.key_source(provider.id)
+    results.append(
+        _check(
+            "provider",
+            f"{provider.id} model={provider.model or 'unset'} key={source}",
+            bool(provider.model) and source != "missing",
+        )
+    )
 
     from .core import capture
 
@@ -162,6 +176,63 @@ def cmd_capture(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sessions(args: argparse.Namespace) -> int:
+    import json
+
+    from .store import config, session as session_store
+
+    action = args.action
+    if action == "list":
+        items = session_store.list_sessions(limit=args.limit)
+        if args.json:
+            print(json.dumps([item.to_dict() for item in items], indent=2))
+            return 0
+        if not items:
+            print("no sessions yet")
+            return 0
+        for item in items:
+            stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(item.updated_at))
+            print(
+                f"{item.id}  {stamp}  {len(item.captures):>2} cuts  "
+                f"{item.turn_count():>2} asks  {item.title}"
+            )
+        return 0
+
+    if action == "new":
+        settings = config.load_settings()
+        session = session_store.create_session(settings, title=args.title or "New session")
+        session.save()
+        print(session.id)
+        return 0
+
+    if action == "show":
+        session = session_store.Session.load(args.id)
+        if session is None:
+            print(f"no session {args.id}", file=sys.stderr)
+            return 1
+        if args.json:
+            print(json.dumps(session.to_dict(), indent=2))
+            return 0
+        print(f"{session.title}  ({session.id})")
+        print(f"{len(session.captures)} cuts, {session.turn_count()} asks, {session.provider or 'no provider'}")
+        for turn in session.turns:
+            who = "you" if turn.role == "user" else "chinchilla"
+            print(f"\n{who}: {turn.text}")
+        return 0
+
+    if action == "delete":
+        session = session_store.Session.load(args.id)
+        if session is None:
+            print(f"no session {args.id}", file=sys.stderr)
+            return 1
+        session.delete()
+        print(f"deleted {args.id}")
+        return 0
+
+    print(f"unknown action {action}", file=sys.stderr)
+    return 2
+
+
 def cmd_panel(args: argparse.Namespace) -> int:
     from .runtime import ensure_gdk_backend
 
@@ -213,6 +284,14 @@ def build_parser() -> argparse.ArgumentParser:
     capture_parser.add_argument("--snapshot", help="write a PNG of the overlay")
     capture_parser.add_argument("--render", help="render the overlay to PNG and use --select")
     capture_parser.set_defaults(func=cmd_capture)
+
+    sessions_parser = sub.add_parser("sessions", help="list, create or inspect sessions")
+    sessions_parser.add_argument("action", choices=["list", "new", "show", "delete"])
+    sessions_parser.add_argument("id", nargs="?", help="session id")
+    sessions_parser.add_argument("--title", help="title for a new session")
+    sessions_parser.add_argument("--limit", type=int, default=20)
+    sessions_parser.add_argument("--json", action="store_true")
+    sessions_parser.set_defaults(func=cmd_sessions)
 
     panel_parser = sub.add_parser("panel", help="open the response panel")
     panel_parser.add_argument("--render", help="render the panel to a PNG and exit")
