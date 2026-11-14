@@ -10,33 +10,226 @@ Built for Linux desktops (GNOME/Wayland tested), no terminal required.
 
 ## Status
 
+New here? Jump to [Installation](#installation).
+
 Feature complete through the build order in [`docs/PLAN.md`](docs/PLAN.md).
 Design source of truth: [`docs/wireframes/wireframes.html`](docs/wireframes/wireframes.html).
 
-## Install
+## Installation
 
-GTK 3 and PyGObject come from the system packages; everything else lives in a
-virtualenv created with `uv`.
+Chinchilla is a GTK 3 desktop app. GTK, PyGObject and the screenshot portal
+must come from the system (they cannot be pip-installed); the Python code and
+its two libraries live in a virtualenv.
+
+Tested on Ubuntu 24.04 with GNOME 46 on Wayland. Other GNOME distributions with
+GTK 3 and `xdg-desktop-portal` should work; KDE and plain window managers are
+untested.
+
+### 1. Requirements
+
+| Needed for | Version | Debian/Ubuntu package |
+| --- | --- | --- |
+| Runtime | Python 3.10+ | `python3` |
+| The UI | PyGObject + GTK 3 typelibs | `python3-gi`, `gir1.2-gtk-3.0` |
+| Silent capture | portal with the GNOME backend | `xdg-desktop-portal`, `xdg-desktop-portal-gnome` |
+| The overlay on Wayland | XWayland (the UI runs on `GDK_BACKEND=x11`) | `xwayland` |
+| The `Ctrl+Alt+A` binding | `gsettings` and `gsd-media-keys` | `libglib2.0-bin`, `gnome-settings-daemon` |
+| Tray icon (optional) | AppIndicator typelib, plus the shell extension | `gir1.2-ayatanaappindicator3-0.1`, `gnome-shell-extension-appindicator` |
+| Web search (optional) | Node.js 18+ with `npx`, and Chrome/Chromium | from [nodejs.org](https://nodejs.org) or `nodejs npm`, `google-chrome-stable` |
+
+`python3-gi-cairo` is **not** required. The selector draws into its own cairo
+surface and hands the frame to GTK as a pixbuf, so the GTK/cairo bridge is
+never needed. Installing it is harmless but changes nothing today.
+
+### 2. System packages
 
 ```bash
-uv venv --system-site-packages
-uv pip install -e .
+sudo apt update
+sudo apt install -y \
+  python3 python3-gi gir1.2-gtk-3.0 \
+  xdg-desktop-portal xdg-desktop-portal-gnome xwayland \
+  libglib2.0-bin gnome-settings-daemon \
+  gir1.2-ayatanaappindicator3-0.1 gnome-shell-extension-appindicator
 ```
 
-Providers are configured with environment variables, either exported in your
-shell or written to `.env` in the project root:
+Fedora equivalents that matter: `python3-gobject`, `gtk3`,
+`xdg-desktop-portal xdg-desktop-portal-gnome`, `xdg-desktop-portal-gtk`,
+`glib2`, `libayatana-appindicator-gtk3`.
+
+### 3. The app
 
 ```bash
-OPENAI_API_KEY=...            # provider "openai"
-ANTHROPIC_API_KEY=...         # provider "anthropic"
-OPENROUTER_API_KEY=...        # provider "openrouter"
+git clone <this repository> chinchilla-auto-translate
+cd chinchilla-auto-translate
 
-LLM_BASE_URL=https://host/v1  # provider "custom" (OpenAI compatible)
-LLM_MODEL=model-name
+uv venv --system-site-packages --python /usr/bin/python3
+uv pip install -e .                # pillow + httpx
+```
+
+Two details matter here:
+
+- `--system-site-packages` is **mandatory**: PyGObject is not on PyPI, so the
+  venv has to see the distro's `gi`.
+- `--python /usr/bin/python3` is **mandatory too**: without it `uv` may fetch
+  its own managed CPython, whose site-packages do not contain the distro
+  modules, and `import gi` fails with `ModuleNotFoundError`. Point it at the
+  system interpreter that owns `python3-gi`.
+
+Confirmed on a clean environment: that pair of flags gives
+`python 3.12.3` + `gtk 3.24.41` inside the venv. `uv` itself, if missing:
+`curl -LsSf https://astral.sh/uv/install.sh | sh`.
+
+Use `uv pip install -e .`, not `uv sync`: `uv sync` rebuilds the environment
+without `--system-site-packages` and drops `gi` again.
+
+`uv pip install -e .` also creates the `chinchilla` command inside
+`.venv/bin/`. Either activate the virtualenv or call it by path:
+
+```bash
+source .venv/bin/activate
+chinchilla version
+```
+
+The virtualenv directory is used by the shortcut (the app stores the absolute
+interpreter), so **do not move or recreate it after installing the shortcut** —
+re-run `chinchilla shortcuts install` if you do.
+
+### 4. Provider keys
+
+Pick one provider in the settings dialog (`chinchilla settings`) and give it a
+key. Keys are read from the environment, then from `.env`, then from the
+credentials file written by the settings dialog.
+
+```bash
+cp .env.example .env        # or create .env next to pyproject.toml
+```
+
+```ini
+# provider "openai"
+OPENAI_API_KEY=sk-...
+
+# provider "anthropic"
+ANTHROPIC_API_KEY=sk-ant-...
+
+# provider "openrouter"
+OPENROUTER_API_KEY=sk-or-...
+
+# provider "custom": any OpenAI compatible endpoint
+LLM_BASE_URL=https://your-host/v1
+LLM_MODEL=your-model
 LLM_API_KEY=...
 ```
 
-Keys can also be saved from the settings dialog; environment variables win.
+`.env` in the project root and `~/.config/chinchilla/.env` are both read; the
+real environment wins over both. `.env` is git-ignored — never commit keys.
+
+### 5. Web search (optional)
+
+The agent can search the web through the `dsh-google-chrome-search` MCP server,
+which drives a real Chrome profile. Nothing is installed globally: `npx`
+fetches it on first use, so the tool only needs the three pieces below.
+
+1. **Node with `npx`** on `PATH`, or in one of the usual places
+   (`~/.local/node/bin`, `~/.volta/bin`, `~/.nvm/versions/node/*/bin`,
+   `~/.fnm/...`). Chinchilla searches those itself, because `npx` is frequently
+   outside a desktop session's `PATH`.
+2. **Chrome or Chromium.**
+3. Optional overrides, in `.env`:
+
+```ini
+WEBSEARCH_MCP_COMMAND=/home/you/.local/node/bin/npx
+WEBSEARCH_MCP_ARGS=-y dsh-google-chrome-search mcp
+CHROME_PATH=/usr/bin/google-chrome
+GSEARCH_PROFILE=/home/you/.dsh-chrome-google
+```
+
+The search profile is a separate Chrome profile, so searches do not touch your
+logged-in browser. It is created on first use; the first search is slow (npm
+download, ~30 s) and later ones take a couple of seconds.
+`chinchilla doctor` shows the exact command it will run.
+
+### 6. Shortcut and autostart
+
+```bash
+chinchilla shortcuts install     # Ctrl+Alt+A, bound to this virtualenv
+chinchilla shortcuts status
+chinchilla shortcuts uninstall   # removes it again
+```
+
+The binding is a GNOME custom keybinding stored in `gsettings`; it applies
+immediately, and `shortcuts install` refreshes it so `gsd-media-keys` picks the
+change up. On a non-GNOME desktop add a shortcut by hand pointing at
+`.venv/bin/python -m chinchilla capture --panel`.
+
+To keep the tray icon and a warm process after login, add an autostart entry
+(run this from the project root, `$(pwd)` fills in the absolute path):
+
+```bash
+mkdir -p ~/.config/autostart
+cat > ~/.config/autostart/chinchilla.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Chinchilla
+Exec=$(pwd)/.venv/bin/python -m chinchilla daemon
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+EOF
+```
+
+### 7. Check the installation
+
+```bash
+chinchilla doctor
+```
+
+Every line must be `ok`:
+
+```
+[ok  ] python: 3.12.3
+[ok  ] gtk: 3.24.41
+[ok  ] session: DISPLAY=:0, WAYLAND_DISPLAY=wayland-0
+[ok  ] paths: /home/you/.local/share/chinchilla writable
+[ok  ] provider: custom model=... key=env:LLM_API_KEY
+[ok  ] capture: portal, portal-area, gnome-shell
+[ok  ] websearch: /path/to/npx -y dsh-google-chrome-search mcp
+[ok  ] screenshot: granted (app id '...')
+[ok  ] shortcut: <Control><Alt>a -> .../python -m chinchilla capture --panel
+```
+
+Then press `Ctrl+Alt+A` and drag a box. Use `chinchilla doctor --verbose` for
+the resolved paths and commands behind each line. The log is at
+`~/.local/state/chinchilla/chinchilla.log` and every run starts with
+`invoked: ...`, which is how you tell "the key never fired" from "the key fired
+and the capture failed".
+
+The first capture grants Chinchilla the portal's `screenshot` permission for
+its own app id, so no dialog appears and no shutter sound plays.
+`chinchilla permission` shows the state and `chinchilla permission revoke`
+takes it back.
+
+### 8. Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `ModuleNotFoundError: gi` | The venv was made without `--system-site-packages`, or with a uv-managed Python that has no distro modules. Recreate it with `uv venv --system-site-packages --python /usr/bin/python3`, then `uv pip install -e .` and `chinchilla shortcuts install` again. |
+| `Ctrl+Alt+A` does nothing, log has no `invoked:` | The binding is not live: `chinchilla shortcuts install`, and check nothing else owns `Ctrl+Alt+A`. |
+| `invoked:` appears but the panel never opens | `chinchilla capture --panel` in a terminal to see the error; usually a missing `DISPLAY`/`xwayland`. |
+| Panel opens, then "capture failed" | The portal refused. `chinchilla permission` shows the grant; `chinchilla doctor` shows which backends are available. The GNOME area selector remains as a fallback. |
+| No tray icon | The AppIndicator extension is off. `gnome-extensions enable ubuntu-appindicators@ubuntu.com` (or `appindicatorsupport@rgcjonas.gmail.com` on upstream GNOME), then log out and in. The shortcut and CLI work regardless. |
+| `websearch` is not ok | `npx` not found or Chrome missing. Set `WEBSEARCH_MCP_COMMAND` / `CHROME_PATH` in `.env`. |
+| Nothing is drawn over the screen | `python3-gi-cairo` missing **and** an old checkout: the current build does not need it. Update the code and `uv pip install -e .` again. |
+| Blurry or misplaced overlay | A second monitor with a different scale, or a leftover instance. `pgrep -af "chinchilla capture"`, then `kill <pid>`. |
+
+### 9. Uninstall
+
+```bash
+chinchilla shortcuts uninstall
+rm -f ~/.config/autostart/chinchilla.desktop
+rm -rf .venv
+rm -rf ~/.config/chinchilla ~/.local/share/chinchilla ~/.local/state/chinchilla
+```
+
+The last line also deletes your sessions, captures and saved keys.
 
 ## Use
 
