@@ -176,6 +176,43 @@ def cmd_capture(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ask(args: argparse.Namespace) -> int:
+    from .core import llm
+    from .core.prompts import SYSTEM_PROMPT
+    from .store import config
+
+    settings = config.load_settings()
+    images = []
+    if args.image:
+        from PIL import Image
+
+        from .core import capture
+
+        images.append(capture.encode_jpeg(Image.open(args.image), max_side=settings.max_side))
+
+    try:
+        provider = llm.build_provider(settings)
+    except llm.ProviderError as exc:
+        print(f"no provider: {exc}", file=sys.stderr)
+        return 1
+
+    messages = [
+        llm.Message("system", SYSTEM_PROMPT),
+        llm.Message("user", args.text, images=images),
+    ]
+    try:
+        for chunk in provider.chat(messages, stream=not args.no_stream):
+            if chunk.type == "text":
+                print(chunk.text, end="", flush=True)
+            elif chunk.type == "usage" and args.verbose:
+                print(f"\nusage: {chunk.usage}", file=sys.stderr)
+    except llm.ProviderError as exc:
+        print(f"\nprovider failed: {exc}", file=sys.stderr)
+        return 1
+    print()
+    return 0
+
+
 def cmd_sessions(args: argparse.Namespace) -> int:
     import json
 
@@ -284,6 +321,13 @@ def build_parser() -> argparse.ArgumentParser:
     capture_parser.add_argument("--snapshot", help="write a PNG of the overlay")
     capture_parser.add_argument("--render", help="render the overlay to PNG and use --select")
     capture_parser.set_defaults(func=cmd_capture)
+
+    ask_parser = sub.add_parser("ask", help="send one prompt to the configured provider")
+    ask_parser.add_argument("text")
+    ask_parser.add_argument("--image", help="attach an image file")
+    ask_parser.add_argument("--no-stream", action="store_true")
+    ask_parser.add_argument("-v", "--verbose", action="store_true")
+    ask_parser.set_defaults(func=cmd_ask)
 
     sessions_parser = sub.add_parser("sessions", help="list, create or inspect sessions")
     sessions_parser.add_argument("action", choices=["list", "new", "show", "delete"])
