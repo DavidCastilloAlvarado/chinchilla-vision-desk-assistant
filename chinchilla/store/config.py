@@ -102,6 +102,7 @@ class Settings:
     hotkey: str = "<Control><Alt>a"
     mcp_command: list[str] = field(default_factory=lambda: ["npx", "-y", "dsh-google-chrome-search", "mcp"])
     mcp_enabled: bool = True
+    mcp_env: dict[str, str] = field(default_factory=dict)
 
     # -------------------------------------------------------------- providers
 
@@ -137,6 +138,7 @@ class Settings:
             "hotkey": self.hotkey,
             "mcp_command": list(self.mcp_command),
             "mcp_enabled": self.mcp_enabled,
+            "mcp_env": dict(self.mcp_env),
         }
 
     @classmethod
@@ -183,6 +185,8 @@ class Settings:
                 setattr(settings, key, int(data[key]))
         if isinstance(data.get("mcp_command"), list) and data["mcp_command"]:
             settings.mcp_command = [str(part) for part in data["mcp_command"]]
+        if isinstance(data.get("mcp_env"), dict):
+            settings.mcp_env = {str(key): str(value) for key, value in data["mcp_env"].items()}
         return settings
 
 
