@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 from . import __version__, paths
 
@@ -52,7 +53,20 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     except OSError as exc:
         results.append(_check("paths", str(exc), False))
 
+    from .core import capture
+
+    available, _details = capture.probe_backends()
+    results.append(
+        _check(
+            "capture",
+            ", ".join(available) if available else "no capture backend available",
+            bool(available),
+        )
+    )
+
     if args.verbose:
+        for line in capture.describe_backends():
+            print(f"       {line}")
         print(f"       config: {paths.settings_path()}")
         print(f"       data:   {paths.sessions_dir()}")
         print(f"       log:    {paths.log_path()}")
@@ -90,6 +104,64 @@ def cmd_overlay(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_capture(args: argparse.Namespace) -> int:
+    import json
+    import time
+
+    from .core import capture
+    from .runtime import ensure_gdk_backend
+
+    if args.source:
+        os.environ["CHINCHILLA_CAPTURE_SOURCE"] = args.source
+
+    out = Path(args.out) if args.out else (
+        paths.captures_dir() / f"capture-{time.strftime('%Y%m%d-%H%M%S')}.jpg"
+    )
+
+    try:
+        if args.area:
+            grab = capture.grab_area(args.backend)
+            image, rect, screen_size = grab.image, None, None
+        else:
+            try:
+                grab = capture.grab_screen(args.backend)
+            except capture.CaptureError:
+                grab = capture.grab_area(args.backend)
+                image, rect, screen_size = grab.image, None, None
+            else:
+                image = grab.image
+                screen_size = (image.width, image.height)
+                rect = args.select
+                if rect is None:
+                    ensure_gdk_backend()
+                    from .ui import overlay
+
+                    rect = overlay.run_overlay(
+                        background=image,
+                        snapshot=args.snapshot,
+                        auto_select=args.select,
+                        render=args.render,
+                    )
+                    if rect is None:
+                        print("cancelled", file=sys.stderr)
+                        return 1
+                image = capture.crop(image, rect, screen_size)
+    except capture.CaptureError as exc:
+        print(f"capture failed: {exc}", file=sys.stderr)
+        return 1
+
+    saved = capture.save_jpeg(image, out)
+    payload = {
+        "backend": grab.backend,
+        "file": str(saved),
+        "width": image.width,
+        "height": image.height,
+        "rect": rect.to_dict() if rect else None,
+    }
+    print(json.dumps(payload))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="chinchilla", description=__doc__)
     parser.add_argument("--version", action="store_true", help="print the version")
@@ -101,6 +173,16 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="check the environment and configuration")
     doctor.add_argument("-v", "--verbose", action="store_true")
     doctor.set_defaults(func=cmd_doctor)
+
+    capture_parser = sub.add_parser("capture", help="capture the screen or a region")
+    capture_parser.add_argument("--out", help="where to write the JPEG")
+    capture_parser.add_argument("--source", help="use this image instead of the live screen")
+    capture_parser.add_argument("--backend", help="force a capture backend id")
+    capture_parser.add_argument("--area", action="store_true", help="use the desktop area selector")
+    capture_parser.add_argument("--select", type=_parse_rect, help="skip the overlay with x,y,w,h")
+    capture_parser.add_argument("--snapshot", help="write a PNG of the overlay")
+    capture_parser.add_argument("--render", help="render the overlay to PNG and use --select")
+    capture_parser.set_defaults(func=cmd_capture)
 
     overlay_parser = sub.add_parser("overlay", help="open the region selector")
     overlay_parser.add_argument("--source", help="image to use as the frozen background")
