@@ -60,6 +60,36 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0 if all(results) else 1
 
 
+def _parse_rect(value: str):
+    from .core.geometry import Rect
+
+    parts = [int(part) for part in value.replace(" ", "").split(",")]
+    if len(parts) != 4:
+        raise argparse.ArgumentTypeError("expected x,y,width,height")
+    return Rect(*parts)
+
+
+def cmd_overlay(args: argparse.Namespace) -> int:
+    from .runtime import ensure_gdk_backend
+
+    ensure_gdk_backend()
+    from .ui import overlay
+
+    rect = overlay.run_overlay(
+        background=overlay.load_background(args.source),
+        snapshot=args.snapshot,
+        snapshot_delay_ms=args.snapshot_delay,
+        auto_select=args.select,
+        auto_complete=args.auto_complete,
+        render=args.render,
+    )
+    if rect is None:
+        print("cancelled")
+        return 1
+    print(f"selected {rect.width}x{rect.height} at {rect.x},{rect.y}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="chinchilla", description=__doc__)
     parser.add_argument("--version", action="store_true", help="print the version")
@@ -71,6 +101,15 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="check the environment and configuration")
     doctor.add_argument("-v", "--verbose", action="store_true")
     doctor.set_defaults(func=cmd_doctor)
+
+    overlay_parser = sub.add_parser("overlay", help="open the region selector")
+    overlay_parser.add_argument("--source", help="image to use as the frozen background")
+    overlay_parser.add_argument("--snapshot", help="write a PNG of the overlay itself")
+    overlay_parser.add_argument("--snapshot-delay", type=int, default=900)
+    overlay_parser.add_argument("--select", type=_parse_rect, help="pre-select x,y,w,h (testing)")
+    overlay_parser.add_argument("--auto-complete", action="store_true")
+    overlay_parser.add_argument("--render", help="render the overlay to a PNG and exit")
+    overlay_parser.set_defaults(func=cmd_overlay)
 
     return parser
 

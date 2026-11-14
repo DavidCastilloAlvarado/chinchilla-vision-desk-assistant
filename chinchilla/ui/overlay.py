@@ -1,0 +1,413 @@
+"""Frozen-frame region selector."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Callable
+
+import cairo
+from PIL import Image
+
+from .gtk import Gdk, GLib, Gtk
+
+from ..core.geometry import Rect, clamp, from_points, is_usable, nudge
+from . import paint, theme
+
+VEIL = (0.02, 0.03, 0.05, 0.44)
+HINT = "Drag to select  |  arrows nudge  |  Enter confirm  |  Esc cancel"
+
+
+class SelectionOverlay(Gtk.Window):
+    """Transparent fullscreen window that reports the dragged rectangle."""
+
+    def __init__(
+        self,
+        background: Image.Image | None = None,
+        on_complete: Callable[[Rect], None] | None = None,
+        on_cancel: Callable[[], None] | None = None,
+        hint: str = HINT,
+    ) -> None:
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.set_decorated(False)
+        self.set_app_paintable(True)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_type_hint(Gdk.WindowTypeHint.DOCK)
+        self.set_keep_above(True)
+        self.set_can_focus(True)
+
+        screen = self.get_screen()
+        visual = screen.get_rgba_visual()
+        if visual is not None:
+            self.set_visual(visual)
+
+        display = Gdk.Display.get_default()
+        monitor = display.get_primary_monitor() or display.get_monitor(0)
+        geometry = monitor.get_geometry()
+        self._screen = Rect(geometry.x, geometry.y, geometry.width, geometry.height)
+        self.set_default_size(self._screen.width, self._screen.height)
+
+        self._background = background
+        self._surface = None
+        self._surface_data = None
+        self._bg_size = (0, 0)
+        if background is not None:
+            self._surface, self._surface_data = paint.surface_from_image(background)
+            self._bg_size = (background.width, background.height)
+
+        self._on_complete = on_complete
+        self._on_cancel = on_cancel
+        self._hint = hint
+        self._origin: tuple[int, int] | None = None
+        self._rect: Rect | None = None
+        self._cursor: tuple[int, int] = (self._screen.width // 2, self._screen.height // 2)
+        self._grab = None
+        self._finished = False
+
+        self.add_events(
+            Gdk.EventMask.BUTTON_PRESS_MASK
+            | Gdk.EventMask.BUTTON_RELEASE_MASK
+            | Gdk.EventMask.POINTER_MOTION_MASK
+            | Gdk.EventMask.KEY_PRESS_MASK
+            | Gdk.EventMask.STRUCTURE_MASK
+            | Gdk.EventMask.ENTER_NOTIFY_MASK
+        )
+        self.connect("draw", self._on_draw)
+        self.connect("button-press-event", self._on_button_press)
+        self.connect("button-release-event", self._on_button_release)
+        self.connect("motion-notify-event", self._on_motion)
+        self.connect("key-press-event", self._on_key)
+
+    # ------------------------------------------------------------------ window
+
+    def start(self) -> None:
+        self.move(self._screen.x, self._screen.y)
+        self.show_all()
+        self.fullscreen()
+        self.present()
+        self._set_cursor()
+        self._grab_seat()
+
+    def _set_cursor(self) -> None:
+        display = Gdk.Display.get_default()
+        gdk_window = self.get_window()
+        if gdk_window is not None:
+            gdk_window.set_cursor(Gdk.Cursor.new_from_name(display, "crosshair"))
+
+    def _grab_seat(self) -> None:
+        display = Gdk.Display.get_default()
+        seat = display.get_default_seat()
+        if seat is None or self.get_window() is None:
+            return
+        try:
+            self._grab = seat.grab(
+                self.get_window(),
+                Gdk.SeatCapabilities.ALL,
+                False,
+                Gdk.Cursor.new_from_name(display, "crosshair"),
+                None,
+                None,
+            )
+        except Exception:  # pragma: no cover - depends on the compositor
+            self._grab = None
+
+    def _release_seat(self) -> None:
+        if self._grab is not None:
+            try:
+                self._grab.release()
+            except Exception:  # pragma: no cover
+                pass
+            self._grab = None
+
+    def finish(self, rect: Rect | None) -> None:
+        if self._finished:
+            return
+        self._finished = True
+        self._release_seat()
+        self.destroy()
+        if rect is not None and self._on_complete:
+            self._on_complete(rect)
+        elif rect is None and self._on_cancel:
+            self._on_cancel()
+
+    # ------------------------------------------------------------------ events
+
+    def _bounds(self) -> tuple[int, int]:
+        return (self._screen.width, self._screen.height)
+
+    def _on_button_press(self, _widget, event) -> bool:
+        if event.button != 1:
+            return False
+        self._origin = (int(event.x), int(event.y))
+        self._rect = Rect(int(event.x), int(event.y), 0, 0)
+        self.queue_draw()
+        return True
+
+    def _on_motion(self, _widget, event) -> bool:
+        self._cursor = (int(event.x), int(event.y))
+        if self._origin is not None:
+            self._rect = from_points(*self._origin, int(event.x), int(event.y), self._bounds())
+        self.queue_draw()
+        return True
+
+    def _on_button_release(self, _widget, event) -> bool:
+        if event.button != 1 or self._origin is None:
+            return False
+        rect = from_points(*self._origin, int(event.x), int(event.y), self._bounds())
+        self._origin = None
+        if is_usable(rect):
+            self.finish(rect)
+        else:
+            self._rect = None
+            self.queue_draw()
+        return True
+
+    def _on_key(self, _widget, event) -> bool:
+        key = event.keyval
+        if key == Gdk.KEY_Escape:
+            self.finish(None)
+            return True
+        if key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            if self._rect is not None and is_usable(self._rect):
+                self.finish(self._rect)
+            return True
+        if key == Gdk.KEY_BackSpace:
+            self._rect = None
+            self._origin = None
+            self.queue_draw()
+            return True
+        step = 10 if event.state & Gdk.ModifierType.SHIFT_MASK else 1
+        deltas = {
+            Gdk.KEY_Left: (-step, 0),
+            Gdk.KEY_Right: (step, 0),
+            Gdk.KEY_Up: (0, -step),
+            Gdk.KEY_Down: (0, step),
+        }
+        if key in deltas:
+            if self._rect is None:
+                self._rect = Rect(0, 0, 0, 0)
+            width, height = self._bounds()
+            self._rect = nudge(self._rect, *deltas[key], width, height)
+            self.queue_draw()
+            return True
+        return False
+
+    # ----------------------------------------------------------------- drawing
+
+    def _on_draw(self, _widget, cr) -> bool:
+        allocation = self.get_allocation()
+        self.render(cr, allocation.width, allocation.height)
+        return True
+
+    def render(self, cr, width: int, height: int) -> None:
+        """Draw the whole overlay; shared by the draw signal and snapshots."""
+        cr.set_operator(1)  # OVER
+        self._paint_background(cr, width, height)
+
+        rect = self._rect
+        if rect is None or not is_usable(rect):
+            cr.set_source_rgba(*VEIL)
+            cr.paint()
+        else:
+            self._paint_veil_around(cr, rect, width, height)
+            self._paint_selection(cr, rect, width, height)
+        self._paint_hint(cr, width, height)
+        if rect is not None and is_usable(rect):
+            self._paint_magnifier(cr, width, height)
+
+    def render_to_png(self, path: str | Path) -> Path:
+        from .snapshot import render_cairo
+
+        return render_cairo(
+            self.render, path, self._screen.width, self._screen.height
+        )
+
+    def _paint_background(self, cr, width: int | None = None, height: int | None = None) -> None:
+        if self._surface is None:
+            return
+        width = width or self._screen.width
+        height = height or self._screen.height
+        cr.save()
+        cr.scale(width / self._bg_size[0], height / self._bg_size[1])
+        cr.set_source_surface(self._surface, 0, 0)
+        cr.paint()
+        cr.restore()
+
+    def _paint_veil_around(self, cr, rect: Rect, width: int, height: int) -> None:
+        cr.set_source_rgba(*VEIL)
+        for x, y, w, h in (
+            (0, 0, width, rect.y),
+            (0, rect.bottom, width, height - rect.bottom),
+            (0, rect.y, rect.x, rect.height),
+            (rect.right, rect.y, width - rect.right, rect.height),
+        ):
+            if w > 0 and h > 0:
+                cr.rectangle(x, y, w, h)
+        cr.fill()
+
+    def _paint_selection(self, cr, rect: Rect, width: int, height: int) -> None:
+        cr.set_source_rgba(*theme.ACCENT)
+        cr.set_line_width(2)
+        cr.rectangle(rect.x + 0.5, rect.y + 0.5, rect.width, rect.height)
+        cr.stroke()
+
+        cr.set_line_width(4)
+        handle = 14
+        for cx, cy, dx, dy in (
+            (rect.x, rect.y, 1, 1),
+            (rect.right, rect.y, -1, 1),
+            (rect.x, rect.bottom, 1, -1),
+            (rect.right, rect.bottom, -1, -1),
+        ):
+            cr.move_to(cx, cy)
+            cr.line_to(cx + dx * handle, cy)
+            cr.move_to(cx, cy)
+            cr.line_to(cx, cy + dy * handle)
+        cr.stroke()
+
+        cr.set_source_rgba(1, 1, 1, 0.18)
+        cr.set_line_width(1)
+        cr.set_dash([4, 4], 0)
+        cr.move_to(self._cursor[0], 0)
+        cr.line_to(self._cursor[0], height)
+        cr.move_to(0, self._cursor[1])
+        cr.line_to(width, self._cursor[1])
+        cr.stroke()
+        cr.set_dash([], 0)
+
+        self._paint_badge(cr, rect, width)
+
+    def _paint_badge(self, cr, rect: Rect, width: int) -> None:
+        text = f"{rect.width} x {rect.height}"
+        tw, th = paint.text_size(text, 12, bold=True)
+        pad = 7
+        bw, bh = tw + pad * 2, th + pad
+        bx = min(max(0, rect.x), width - bw)
+        by = rect.y - bh - 6
+        if by < 0:
+            by = rect.y + 6
+        cr.set_source_rgba(*theme.ACCENT)
+        cr.rectangle(bx, by, bw, bh)
+        cr.fill()
+        paint.draw_text(
+            cr, text, bx + pad / 2, by + (bh - th) / 2, 12, (0.09, 0.08, 0.05), True
+        )
+
+    def _paint_hint(self, cr, width: int, height: int) -> None:
+        if not self._hint:
+            return
+        tw, th = paint.text_size(self._hint, 11)
+        pad = 12
+        bx = (width - tw) / 2 - pad
+        by = 24.0
+        cr.set_source_rgba(0.06, 0.07, 0.09, 0.82)
+        cr.rectangle(bx, by, tw + pad * 2, th + pad)
+        cr.fill()
+        paint.draw_text(
+            cr, self._hint, bx + pad / 2, by + (th + pad - th) / 2, 11, (0.92, 0.90, 0.86)
+        )
+        del height
+
+    def _paint_magnifier(self, cr, width: int, height: int) -> None:
+        if self._surface is None:
+            return
+        size, zoom = 132, 3
+        cx, cy = self._cursor
+        bx = width - size - 24 if cx < width / 2 else 24
+        by = height - size - 24 if cy < height / 2 else 24
+        sx = self._screen.width / self._bg_size[0]
+        sy = self._screen.height / self._bg_size[1]
+
+        cr.save()
+        cr.rectangle(bx, by, size, size)
+        cr.clip()
+        cr.translate(bx + size / 2, by + size / 2)
+        cr.scale(zoom * sx, zoom * sy)
+        cr.translate(-cx / sx, -cy / sy)
+        cr.set_source_surface(self._surface, 0, 0)
+        cr.paint()
+        cr.restore()
+
+        cr.set_source_rgba(*theme.ACCENT)
+        cr.set_line_width(1.5)
+        cr.rectangle(bx + 0.5, by + 0.5, size, size)
+        cr.stroke()
+        cr.set_source_rgba(1, 1, 1, 0.7)
+        cr.move_to(bx + size / 2 - 8, by + size / 2)
+        cr.line_to(bx + size / 2 + 8, by + size / 2)
+        cr.move_to(bx + size / 2, by + size / 2 - 8)
+        cr.line_to(bx + size / 2, by + size / 2 + 8)
+        cr.stroke()
+
+    # ------------------------------------------------------------------- utils
+
+    def select_for_test(self, rect: Rect) -> None:
+        """Select a rect programmatically, used by the snapshot harness."""
+        self._rect = clamp(rect, *self._bounds())
+        self._cursor = (self._rect.right, self._rect.bottom)
+        self.queue_draw()
+
+    def complete_for_test(self) -> None:
+        if self._rect is not None and is_usable(self._rect):
+            self.finish(self._rect)
+
+
+def run_overlay(
+    background: Image.Image | None = None,
+    snapshot: str | None = None,
+    snapshot_delay_ms: int = 900,
+    auto_select: Rect | None = None,
+    auto_complete: bool = False,
+    render: str | None = None,
+) -> Rect | None:
+    """Run the overlay in its own GTK loop. Returns the selected rect."""
+    result: dict[str, Rect | None] = {"rect": None}
+    holder: dict[str, SelectionOverlay] = {}
+
+    def done(rect: Rect) -> None:
+        result["rect"] = rect
+        Gtk.main_quit()
+
+    def cancelled() -> None:
+        result["rect"] = None
+        Gtk.main_quit()
+
+    overlay = SelectionOverlay(background=background, on_complete=done, on_cancel=cancelled)
+    holder["overlay"] = overlay
+
+    if render:
+        if auto_select is not None:
+            overlay.select_for_test(auto_select)
+        path = overlay.render_to_png(render)
+        print(f"render written: {path}")
+        rect = overlay._rect
+        overlay.destroy()
+        print(json.dumps({"rect": rect.to_dict() if rect else None, "render": str(path)}))
+        return rect
+
+    overlay.start()
+
+    if auto_select is not None:
+        GLib.timeout_add(250, lambda: (overlay.select_for_test(auto_select), False)[1])
+        if auto_complete:
+            delay = max(450, snapshot_delay_ms + 300) if snapshot else 450
+            GLib.timeout_add(delay, lambda: (overlay.complete_for_test(), False)[1])
+    if snapshot:
+        from .snapshot import snapshot_after
+
+        snapshot_after(overlay, snapshot, snapshot_delay_ms)
+        GLib.timeout_add(snapshot_delay_ms + 400, lambda: (Gtk.main_quit(), False)[1])
+
+    Gtk.main()
+    if overlay.get_window() is not None:
+        overlay.destroy()
+    rect = result["rect"]
+    print(json.dumps({"rect": rect.to_dict() if rect else None, "snapshot": snapshot}))
+    return rect
+
+
+def load_background(path: str | Path | None) -> Image.Image | None:
+    if not path:
+        return None
+    return Image.open(path)
