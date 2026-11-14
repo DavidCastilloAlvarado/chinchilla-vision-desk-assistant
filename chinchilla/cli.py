@@ -79,6 +79,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         )
     )
 
+    from .core import search
+
+    web_ok, web_detail = search.probe_server(settings)
+    results.append(_check("websearch", web_detail, web_ok))
+
     from . import shortcuts
 
     shortcut = shortcuts.status()
@@ -89,6 +94,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if args.verbose:
         for line in capture.describe_backends():
             print(f"       {line}")
+        _command, web_env = config.resolved_mcp(settings)
+        print(f"       websearch env: npx in {Path(_command[0]).parent}")
+        print(f"       chrome: {web_env.get('CHROME_PATH')}")
+        print(f"       profile: {web_env.get('GSEARCH_PROFILE')}")
         print(f"       config: {paths.settings_path()}")
         print(f"       data:   {paths.sessions_dir()}")
         print(f"       log:    {paths.log_path()}")
@@ -494,6 +503,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from . import log
+
+    log.get("cli").info("invoked: %s", " ".join(sys.argv[1:] if argv is None else argv))
     parser = build_parser()
     args = parser.parse_args(argv)
     if getattr(args, "version", False):

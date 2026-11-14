@@ -11,10 +11,10 @@ import json
 import os
 import re
 import select
-import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .. import log
@@ -230,11 +230,11 @@ class WebSearch:
             self.error = "web search is disabled in settings"
             return False
         if self._client is None:
-            command = list(self.settings.mcp_command)
-            if not command or shutil.which(command[0]) is None:
+            command, env = config.resolved_mcp(self.settings)
+            if not command or not Path(command[0]).is_file():
                 self.error = f"{command[0] if command else 'mcp'} is not installed"
                 return False
-            self._client = MCPClient(command, env=self.settings.mcp_env)
+            self._client = MCPClient(command, env=env)
         try:
             self._client.start()
         except (MCPError, OSError) as exc:
@@ -292,10 +292,9 @@ def probe_server(settings: config.Settings) -> tuple[bool, str]:
     """Cheap availability check used by doctor."""
     if not settings.mcp_enabled:
         return False, "disabled in settings"
-    command = list(settings.mcp_command)
+    command, _ = config.resolved_mcp(settings)
     if not command:
         return False, "no command configured"
-    binary = shutil.which(command[0])
-    if binary is None:
+    if not Path(command[0]).is_file():
         return False, f"{command[0]} not installed"
     return True, " ".join(command)

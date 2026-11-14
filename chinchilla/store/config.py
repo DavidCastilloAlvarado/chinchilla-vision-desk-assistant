@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +43,74 @@ PROVIDERS: dict[str, dict[str, str]] = {
         "kind": "openai",
     },
 }
+
+MCP_PACKAGE = "dsh-google-chrome-search"
+DEFAULT_CHROME = "/usr/bin/google-chrome"
+DEFAULT_PROFILE_DIR = "~/.dsh-chrome-google"
+# ------------------------------------------------------------ web search tools
+
+
+def find_node_bin(name: str) -> str | None:
+    """`npx` is often installed outside PATH (nvm, ~/.local/node, ...)."""
+    found = shutil.which(name)
+    if found:
+        return found
+    home = Path.home()
+    folders = [home / ".local/node/bin", home / ".volta/bin", home / ".bun/bin"]
+    for pattern in (".nvm/versions/node/*/bin", ".fnm/node-versions/*/installation/bin"):
+        folders.extend(sorted(home.glob(pattern), reverse=True))
+    for folder in folders:
+        candidate = folder / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def default_mcp_command() -> list[str]:
+    """Same server the other desktop project uses, launched with a real npx."""
+    npx = find_node_bin("npx") or "npx"
+    return [npx, "-y", MCP_PACKAGE, "mcp"]
+
+
+def default_mcp_env() -> dict[str, str]:
+    chrome = DEFAULT_CHROME
+    if not Path(chrome).is_file():
+        found = shutil.which("google-chrome") or shutil.which("chromium") or ""
+        chrome = found or DEFAULT_CHROME
+    return {
+        "CHROME_PATH": chrome,
+        "GSEARCH_PROFILE": str(Path(os.path.expanduser(DEFAULT_PROFILE_DIR))),
+    }
+
+
+def env_value(name: str) -> str:
+    """Real environment wins over the .env files."""
+    return (os.environ.get(name) or load_env().get(name) or "").strip()
+
+
+def resolved_mcp(settings: "Settings") -> tuple[list[str], dict[str, str]]:
+    """Launch details for the MCP server, with the environment as override."""
+    command = list(settings.mcp_command) or default_mcp_command()
+    raw_command = env_value("WEBSEARCH_MCP_COMMAND")
+    if raw_command:
+        args = env_value("WEBSEARCH_MCP_ARGS") or f"-y {MCP_PACKAGE} mcp"
+        command = [raw_command, *args.split()]
+    resolved = find_node_bin(Path(command[0]).name)
+    if resolved and not Path(command[0]).is_absolute():
+        command[0] = resolved
+    merged = default_mcp_env()
+    merged.update({key: str(value) for key, value in settings.mcp_env.items() if value})
+    for key in ("CHROME_PATH", "GSEARCH_PROFILE"):
+        override = env_value(key)
+        if override:
+            merged[key] = override
+    node_dir = str(Path(command[0]).parent)
+    if node_dir and node_dir not in os.environ.get("PATH", "").split(os.pathsep):
+        merged["PATH"] = os.pathsep.join(
+            [node_dir, merged.get("PATH", os.environ.get("PATH", ""))]
+        ).strip(os.pathsep)
+    return command, merged
+
 
 DEFAULT_LANGUAGE = "Spanish"
 DEFAULT_LEVEL = "B1"
@@ -100,9 +169,9 @@ class Settings:
     max_side: int = DEFAULT_MAX_SIDE
     panel_width: int = 404
     hotkey: str = "<Control><Alt>a"
-    mcp_command: list[str] = field(default_factory=lambda: ["npx", "-y", "dsh-google-chrome-search", "mcp"])
+    mcp_command: list[str] = field(default_factory=default_mcp_command)
     mcp_enabled: bool = True
-    mcp_env: dict[str, str] = field(default_factory=dict)
+    mcp_env: dict[str, str] = field(default_factory=default_mcp_env)
 
     # -------------------------------------------------------------- providers
 

@@ -86,3 +86,34 @@ def test_unknown_method_raises():
     with client:
         with pytest.raises(search.MCPError):
             client._request("tools/nope", {})
+
+
+def test_resolved_mcp_prefers_the_configured_command(xdg):
+    settings = config.default_settings()
+    settings.mcp_command = [sys.executable, str(FAKE_SERVER)]
+
+    command, env = config.resolved_mcp(settings)
+
+    assert command == [sys.executable, str(FAKE_SERVER)]
+    assert env["CHROME_PATH"]
+
+
+def test_resolved_mcp_reads_the_environment(xdg, monkeypatch, tmp_path):
+    npx = tmp_path / "npx"
+    npx.write_text("#!/bin/sh\n", encoding="utf-8")
+    npx.chmod(0o755)
+    monkeypatch.setenv("WEBSEARCH_MCP_COMMAND", str(npx))
+    monkeypatch.setenv("WEBSEARCH_MCP_ARGS", "-y custom-server mcp")
+    monkeypatch.setenv("GSEARCH_PROFILE", "/tmp/profile")
+
+    command, env = config.resolved_mcp(config.default_settings())
+
+    assert command == [str(npx), "-y", "custom-server", "mcp"]
+    assert env["GSEARCH_PROFILE"] == "/tmp/profile"
+    assert env["PATH"].split(":")[0] == str(tmp_path)
+
+
+def test_find_node_bin_skips_a_missing_binary(xdg, monkeypatch):
+    monkeypatch.setenv("PATH", "/nonexistent")
+
+    assert config.find_node_bin("definitely-not-installed") is None
