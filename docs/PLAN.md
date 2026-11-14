@@ -78,7 +78,7 @@ Each step is implemented, verified, and committed to `main` on its own.
 | 8 | Web search: MCP client, tool loop, citations | tests against a fake MCP stdio server | done |
 | 9 | Settings UI and session selector | `settings --render`, `sessions list --render`, round-trip tests | done |
 | 10 | App: single instance, tray, shortcut install | `shortcuts install/status/uninstall`, `app --render`, daemon activation | done |
-| 11 | Docs: README, verification notes | full test suite + end-to-end run | next |
+| 11 | Docs: README, verification notes | full test suite + end-to-end run | done |
 
 ## Environment notes
 

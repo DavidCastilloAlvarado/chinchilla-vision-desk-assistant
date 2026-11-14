@@ -468,7 +468,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     shortcuts_parser.add_argument("action", nargs="?", choices=["status", "install", "uninstall"], default="status")
     shortcuts_parser.add_argument("--binding", default=DEFAULT_BINDING, help="accelerator to bind")
-    shortcuts_parser.add_argument("--command", default="chinchilla capture --panel", help="command to run")
+    shortcuts_parser.add_argument("--command", help="command to run (defaults to this installation)")
     shortcuts_parser.set_defaults(func=cmd_shortcuts)
 
     settings_parser = sub.add_parser("settings", help="open the settings dialog")

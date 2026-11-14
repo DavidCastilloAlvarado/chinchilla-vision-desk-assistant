@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 
 MEDIA_KEYS = "org.gnome.settings-daemon.plugins.media-keys"
@@ -61,6 +62,14 @@ def format_keybindings(paths: list[str]) -> str:
     return "[" + ", ".join(f"'{path}'" for path in paths) + "]"
 
 
+def default_command() -> str:
+    """The shortcut has to work without the virtualenv on PATH."""
+    installed = shutil.which("chinchilla")
+    if installed:
+        return f"{installed} capture --panel"
+    return f"{sys.executable} -m chinchilla capture --panel"
+
+
 def available() -> bool:
     return shutil.which("gsettings") is not None
 
@@ -84,11 +93,12 @@ def status() -> ShortcutStatus:
 
 
 def install(
-    command: str = DEFAULT_COMMAND,
+    command: str | None = None,
     binding: str = DEFAULT_BINDING,
     name: str = DEFAULT_NAME,
 ) -> ShortcutStatus:
     """Register the slot in GNOME's custom keybindings list."""
+    command = command or default_command()
     if not available():
         raise ShortcutError("gsettings not found; install it or add the shortcut by hand")
     paths = parse_keybindings(_gsettings("get", MEDIA_KEYS, "custom-keybindings"))
