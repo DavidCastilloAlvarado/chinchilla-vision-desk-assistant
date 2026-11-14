@@ -81,6 +81,7 @@ Each step is implemented, verified, and committed to `main` on its own.
 | 11 | Docs: README, verification notes | full test suite + end-to-end run | done |
 | 12 | Silent capture: portal permission for the app id, own selector over the frozen frame | `permission` command, live screen capture of the running selector, pytest | done |
 | 13 | Distribution: installation guide with every dependency, `.env.example`, troubleshooting | steps replayed in a scratch venv, `doctor` from that venv | done |
+| 14 | Web search setup docs, `doctor --verbose` handshake, `chinchilla search` probe | real search against `dsh-google-chrome-search`, CLI and probe tests | done |
 
 ## Environment notes
 

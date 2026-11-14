@@ -82,6 +82,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     from .core import search
 
     web_ok, web_detail = search.probe_server(settings)
+    if args.verbose and web_ok:
+        # the cheap check only proves the command exists; start the server so
+        # --verbose really says whether the tools are there
+        web_ok, web_detail = search.probe_server(settings, handshake=True)
     results.append(_check("websearch", web_detail, web_ok))
 
     from .core import permission
@@ -210,6 +214,49 @@ def cmd_capture(args: argparse.Namespace) -> int:
     }
     print(json.dumps(payload))
     return 0
+
+
+def cmd_search(args: argparse.Namespace) -> int:
+    import json
+
+    from .core import search
+    from .store import config
+
+    settings = config.load_settings()
+    web = search.WebSearch(settings)
+    if not web.start():
+        print(f"web search unavailable: {web.error}", file=sys.stderr)
+        return 1
+    try:
+        names = {tool.name for tool in web.tools()}
+        if "search" not in names:
+            print(
+                f"the server exposes {sorted(names) or 'no tools'}, not 'search'",
+                file=sys.stderr,
+            )
+            return 1
+        result = web.call("search", {"query": args.query, "maxResults": args.max})
+    finally:
+        web.close()
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "ok": result.ok,
+                    "sources": [source.to_dict() for source in result.sources],
+                    "text": result.text,
+                },
+                indent=2,
+            )
+        )
+    else:
+        for index, source in enumerate(result.sources, start=1):
+            print(f"[{index}] {source.title} <{source.url}>")
+        if result.sources:
+            print()
+        print(result.text[: args.chars])
+    return 0 if result.ok else 1
 
 
 def cmd_ask(args: argparse.Namespace) -> int:
@@ -484,6 +531,15 @@ def build_parser() -> argparse.ArgumentParser:
     ask_parser.add_argument("--no-stream", action="store_true")
     ask_parser.add_argument("-v", "--verbose", action="store_true")
     ask_parser.set_defaults(func=cmd_ask)
+
+    search_parser = sub.add_parser(
+        "search", help="run one web search through the MCP server (a connectivity check)"
+    )
+    search_parser.add_argument("query")
+    search_parser.add_argument("--max", type=int, default=5, help="results to ask for")
+    search_parser.add_argument("--chars", type=int, default=2000, help="text to print")
+    search_parser.add_argument("--json", action="store_true")
+    search_parser.set_defaults(func=cmd_search)
 
     sessions_parser = sub.add_parser("sessions", help="list, create or inspect sessions")
     sessions_parser.add_argument("action", choices=["list", "new", "show", "delete"])

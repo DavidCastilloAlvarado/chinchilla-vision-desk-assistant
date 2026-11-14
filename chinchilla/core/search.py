@@ -288,8 +288,13 @@ class WebSearch:
             self._client.close()
 
 
-def probe_server(settings: config.Settings) -> tuple[bool, str]:
-    """Cheap availability check used by doctor."""
+def probe_server(settings: config.Settings, handshake: bool = False) -> tuple[bool, str]:
+    """Availability check used by doctor.
+
+    Cheap by default: it only proves the command exists. `handshake=True`
+    starts the server and lists its tools, which is what actually fails when
+    Node, the npm package or the browser are broken.
+    """
     if not settings.mcp_enabled:
         return False, "disabled in settings"
     command, _ = config.resolved_mcp(settings)
@@ -297,4 +302,15 @@ def probe_server(settings: config.Settings) -> tuple[bool, str]:
         return False, "no command configured"
     if not Path(command[0]).is_file():
         return False, f"{command[0]} not installed"
-    return True, " ".join(command)
+    if not handshake:
+        return True, " ".join(command)
+    web = WebSearch(settings)
+    if not web.start():
+        return False, f"{web.error or 'the server did not start'}"
+    try:
+        tools = [tool.name for tool in web.tools()]
+    finally:
+        web.close()
+    if not tools:
+        return False, web.error or "the server exposes no tools"
+    return True, f"{' '.join(command)} (tools: {', '.join(tools)})"

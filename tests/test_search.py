@@ -117,3 +117,20 @@ def test_find_node_bin_skips_a_missing_binary(xdg, monkeypatch):
     monkeypatch.setenv("PATH", "/nonexistent")
 
     assert config.find_node_bin("definitely-not-installed") is None
+
+
+def test_probe_server_handshake_reports_the_tools():
+    ok, detail = search.probe_server(fake_settings(), handshake=True)
+
+    assert ok is True
+    assert "tools: search, fetch" in detail
+
+
+def test_probe_server_handshake_reports_a_dead_server():
+    settings = config.default_settings()
+    settings.mcp_command = [sys.executable, "-c", "import sys; sys.exit(3)"]
+
+    ok, detail = search.probe_server(settings, handshake=True)
+
+    assert ok is False
+    assert detail

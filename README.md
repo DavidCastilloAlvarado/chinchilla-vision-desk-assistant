@@ -35,7 +35,9 @@ untested.
 | The overlay on Wayland | XWayland (the UI runs on `GDK_BACKEND=x11`) | `xwayland` |
 | The `Ctrl+Alt+A` binding | `gsettings` and `gsd-media-keys` | `libglib2.0-bin`, `gnome-settings-daemon` |
 | Tray icon (optional) | AppIndicator typelib, plus the shell extension | `gir1.2-ayatanaappindicator3-0.1`, `gnome-shell-extension-appindicator` |
-| Web search (optional) | Node.js 18+ with `npx`, and Chrome/Chromium | from [nodejs.org](https://nodejs.org) or `nodejs npm`, `google-chrome-stable` |
+| Web search (optional) | Node.js 18+ with `npx` | `nodejs npm`, or [nodejs.org](https://nodejs.org) for a newer one |
+| Web search (optional) | Chrome, Chromium, Brave or Edge | `google-chrome-stable`, `chromium-browser`, or `npx dsh-google-chrome-search install-browser` |
+| Reading PDFs while searching (optional) | `pdftoppm` | `poppler-utils` |
 
 `python3-gi-cairo` is **not** required. The selector draws into its own cairo
 surface and hands the frame to GTK as a pixbuf, so the GTK/cairo bridge is
@@ -49,8 +51,12 @@ sudo apt install -y \
   python3 python3-gi gir1.2-gtk-3.0 \
   xdg-desktop-portal xdg-desktop-portal-gnome xwayland \
   libglib2.0-bin gnome-settings-daemon \
-  gir1.2-ayatanaappindicator3-0.1 gnome-shell-extension-appindicator
+  gir1.2-ayatanaappindicator3-0.1 gnome-shell-extension-appindicator \
+  nodejs npm poppler-utils
 ```
+
+`nodejs npm poppler-utils` are only needed for web search; drop them if you skip
+step 5.
 
 Fedora equivalents that matter: `python3-gobject`, `gtk3`,
 `xdg-desktop-portal xdg-desktop-portal-gnome`, `xdg-desktop-portal-gtk`,
@@ -123,30 +129,129 @@ LLM_API_KEY=...
 `.env` in the project root and `~/.config/chinchilla/.env` are both read; the
 real environment wins over both. `.env` is git-ignored — never commit keys.
 
-### 5. Web search (optional)
+### 5. Web search
 
-The agent can search the web through the `dsh-google-chrome-search` MCP server,
-which drives a real Chrome profile. Nothing is installed globally: `npx`
-fetches it on first use, so the tool only needs the three pieces below.
+The agent can look things up while answering. Searches run through
+[`dsh-google-chrome-search`](https://github.com/DavidCastilloAlvarado/dsh-google-chrome-search),
+an MCP server that drives a real Chrome over CDP and renders the pages it finds.
+There is **no search API key** and nothing to configure upstream — it uses a
+browser on the machine.
 
-1. **Node with `npx`** on `PATH`, or in one of the usual places
-   (`~/.local/node/bin`, `~/.volta/bin`, `~/.nvm/versions/node/*/bin`,
-   `~/.fnm/...`). Chinchilla searches those itself, because `npx` is frequently
-   outside a desktop session's `PATH`.
-2. **Chrome or Chromium.**
-3. Optional overrides, in `.env`:
+This step is optional: without it everything except the **Web** toggle keeps
+working and `chinchilla doctor` reports `websearch: disabled in settings` or
+`websearch: /path/npx not installed`.
+
+#### How it fits together
+
+```mermaid
+flowchart LR
+    A[panel, Web on] --> B[agent turn]
+    B -->|tools/list| C["npx -y<br/>dsh-google-chrome-search mcp"]
+    C --> D[Chrome profile<br/>~/.dsh-chrome-google]
+    D --> E[google.com results]
+    C --> F["search / fetch /<br/>search_and_fetch"]
+    F --> B
+    B --> G[answer + numbered sources]
+```
+
+The model gets the server's own tools, and every URL that comes back becomes a
+citation under the answer. A single turn may call tools **4 times within 20
+seconds**; after that the agent stops and says so instead of crawling.
+
+#### What to install
+
+| Piece | Why | How |
+| --- | --- | --- |
+| Node.js ≥ 18 with `npx` | runs the MCP server; `npx` downloads it the first time | [nodejs.org](https://nodejs.org), or `sudo apt install nodejs npm` (Ubuntu's is 18+) |
+| A Chrome-family browser | the server drives it over CDP | `google-chrome-stable`, `chromium`, Brave or Edge; auto-detected |
+| `poppler-utils` (optional) | turns a fetched PDF into page images the model can read | `sudo apt install poppler-utils` |
+
+Without any browser on the machine, let the plugin bring its own:
+
+```bash
+npx dsh-google-chrome-search install-browser   # ~170 MB, one time
+```
+
+It lands in `~/.dsh-chrome-google/browser/` and is found automatically.
+
+Nothing is installed globally and no npm package goes into the project: `npx`
+fetches `dsh-google-chrome-search` into `~/.npm/_npx/…` on first use. That first
+run downloads the package plus `puppeteer-core`, so expect **20-40 s**; later
+searches take 2-5 s.
+
+#### Find `npx` even when it is not on `PATH`
+
+Desktop sessions often start with a shorter `PATH` than your terminal, which is
+why `npx: command not found` shows up only inside the app. Chinchilla therefore
+probes `PATH` plus `~/.local/node/bin`, `~/.volta/bin`, `~/.bun/bin`,
+`~/.nvm/versions/node/*/bin` and `~/.fnm/node-versions/*/installation/bin`, and
+prepends the directory it found to the server's own `PATH` (the package shebang
+is `/usr/bin/env node`).
+
+If your Node lives somewhere else, name it explicitly in `.env`:
 
 ```ini
-WEBSEARCH_MCP_COMMAND=/home/you/.local/node/bin/npx
+WEBSEARCH_MCP_COMMAND=/home/you/opt/node/bin/npx
 WEBSEARCH_MCP_ARGS=-y dsh-google-chrome-search mcp
 CHROME_PATH=/usr/bin/google-chrome
 GSEARCH_PROFILE=/home/you/.dsh-chrome-google
 ```
 
-The search profile is a separate Chrome profile, so searches do not touch your
-logged-in browser. It is created on first use; the first search is slow (npm
-download, ~30 s) and later ones take a couple of seconds.
-`chinchilla doctor` shows the exact command it will run.
+`WEBSEARCH_MCP_COMMAND` + `WEBSEARCH_MCP_ARGS` replace the whole command, so you
+can also point at anything else that speaks MCP over stdio. `CHROME_PATH` and
+`GSEARCH_PROFILE` are the two variables the server itself reads; both are also
+editable in **Settings → Web**.
+
+#### The Chrome profile
+
+`GSEARCH_PROFILE` defaults to `~/.dsh-chrome-google`, a **separate profile**: the
+server never touches your everyday Chrome window, cookies or extensions. Inside
+it you will find:
+
+| Path | Content |
+| --- | --- |
+| `~/.dsh-chrome-google/` | the profile itself (cookies, history of these searches) |
+| `~/.dsh-chrome-google/browser/` | a bundled Chrome for Testing, if you ran `install-browser` |
+| `~/.dsh-chrome-google/screenshots/` | PDF pages and CAPTCHA screenshots |
+| `~/.dsh-chrome-google/downloads/` | PDFs fetched for a turn |
+
+Deleting the folder is safe; it is recreated on the next search, and it is the
+usual fix for a wedged profile (`rm -rf ~/.dsh-chrome-google`).
+
+#### Google's CAPTCHA
+
+Google sometimes decides the traffic is automated and shows a verification page.
+The server then **opens a visible Chrome window** and waits for a human to solve
+it (up to its `verifyTimeoutMs`), and whatever you solved is remembered in the
+profile, so later searches pass. Chinchilla never tries to solve it. If nobody
+is at the screen, the tool reports the verification requirement instead of
+inventing an answer. A Google account login is not needed; `npx
+dsh-google-chrome-search login` exists if you prefer a signed-in session.
+
+#### Check it, and switch it on
+
+```bash
+chinchilla doctor              # websearch: <command>            (command exists)
+chinchilla doctor --verbose    # starts the server, lists its tools
+chinchilla search "chinchilla animal" --max 3
+```
+
+`chinchilla search` is a one-shot connectivity test: it starts the server, runs a
+real search, and prints the sources it got.
+
+```
+[1] Chinchilla - Wikipedia <https://en.wikipedia.org/wiki/Chinchilla>
+[2] Chinchilla | San Diego Zoo Animals & Plants <https://animals.sandiegozoo.org/animals/chinchilla>
+...
+```
+
+The same check exists in the UI: **Settings → Web → Check** prints
+`ok - tools: search, fetch, search_and_fetch, login, account`.
+
+Two switches gate the feature and both default to on: `mcp_enabled` in the
+settings file, and the **Web** toggle in the panel header, which is per session
+and saved with it. Turn the panel toggle off for a conversation that should not
+search.
 
 ### 6. Shortcut and autostart
 
@@ -191,13 +296,23 @@ Every line must be `ok`:
 [ok  ] paths: /home/you/.local/share/chinchilla writable
 [ok  ] provider: custom model=... key=env:LLM_API_KEY
 [ok  ] capture: portal, portal-area, gnome-shell
-[ok  ] websearch: /path/to/npx -y dsh-google-chrome-search mcp
+[ok  ] websearch: /path/npx -y dsh-google-chrome-search mcp
 [ok  ] screenshot: granted (app id '...')
 [ok  ] shortcut: <Control><Alt>a -> .../python -m chinchilla capture --panel
 ```
 
-Then press `Ctrl+Alt+A` and drag a box. Use `chinchilla doctor --verbose` for
-the resolved paths and commands behind each line. The log is at
+`--verbose` adds the resolved paths, retries the web search server for real and
+lists the tools it exposes:
+
+```
+[ok  ] websearch: /path/npx -y dsh-google-chrome-search mcp (tools: search, fetch, search_and_fetch, login, account)
+       websearch env: npx in /path
+       chrome: /usr/bin/google-chrome
+       profile: /home/you/.dsh-chrome-google
+```
+
+Then press `Ctrl+Alt+A` and drag a box, and run `chinchilla search "hello"` once
+to prove the search path end to end. The log is at
 `~/.local/state/chinchilla/chinchilla.log` and every run starts with
 `invoked: ...`, which is how you tell "the key never fired" from "the key fired
 and the capture failed".
@@ -216,7 +331,12 @@ takes it back.
 | `invoked:` appears but the panel never opens | `chinchilla capture --panel` in a terminal to see the error; usually a missing `DISPLAY`/`xwayland`. |
 | Panel opens, then "capture failed" | The portal refused. `chinchilla permission` shows the grant; `chinchilla doctor` shows which backends are available. The GNOME area selector remains as a fallback. |
 | No tray icon | The AppIndicator extension is off. `gnome-extensions enable ubuntu-appindicators@ubuntu.com` (or `appindicatorsupport@rgcjonas.gmail.com` on upstream GNOME), then log out and in. The shortcut and CLI work regardless. |
-| `websearch` is not ok | `npx` not found or Chrome missing. Set `WEBSEARCH_MCP_COMMAND` / `CHROME_PATH` in `.env`. |
+| `websearch` is not ok | `npx` not found or Chrome missing. `chinchilla doctor --verbose` starts the server and shows the real error; set `WEBSEARCH_MCP_COMMAND` / `CHROME_PATH` in `.env`. |
+| `chinchilla search` fails with `not installed` | `npx` is somewhere Chinchilla does not probe. Put its absolute path in `WEBSEARCH_MCP_COMMAND`. |
+| A Chrome window appears while the agent answers | Google served a CAPTCHA. Solve it; the profile remembers it. Nobody at the screen? The tool reports the block instead of guessing. |
+| Search hangs on the first use | `npx` is downloading the package. Give it 40 s once, or pre-warm with `chinchilla search "test"`. |
+| Search returns nothing or `blocked` | The site refused the browser or the profile is wedged: `rm -rf ~/.dsh-chrome-google` and try again. |
+| The **Web** toggle does nothing | `mcp_enabled` is off in `~/.config/chinchilla/settings.json`, or the server has no tools; check **Settings → Web → Check**. |
 | Nothing is drawn over the screen | `python3-gi-cairo` missing **and** an old checkout: the current build does not need it. Update the code and `uv pip install -e .` again. |
 | Blurry or misplaced overlay | A second monitor with a different scale, or a leftover instance. `pgrep -af "chinchilla capture"`, then `kill <pid>`. |
 
@@ -240,7 +360,9 @@ chinchilla daemon                # tray icon, no capture (use it at login)
 chinchilla capture --panel       # capture a region and open the panel
 chinchilla settings              # language, quick actions, providers, web, data
 chinchilla sessions list         # stored conversations
+chinchilla search "query"        # one web search through the MCP server
 chinchilla doctor                # environment, provider, capture and shortcut state
+chinchilla doctor --verbose      # plus the resolved paths, servers and tools
 ```
 
 Inside the panel: `Ctrl+R` adds another cut, `Ctrl+N` starts a session,
@@ -275,33 +397,23 @@ chinchilla permission revoke     # ask the desktop again on the next capture
 
 ### Web search
 
-The agent can call `search`, `fetch` and `search_and_fetch` through the same
-MCP server the other desktop project uses:
+Turn the **Web** toggle on in the panel header and the agent can call the
+server's own tools:
 
-```
-npx -y dsh-google-chrome-search mcp
-```
+| Tool | Does |
+| --- | --- |
+| `search` | Google results, plus Google's AI Overview and its references when present |
+| `fetch` | renders one URL and extracts its readable content (8000 chars by default) |
+| `search_and_fetch` | search, then read the top N pages in one call |
+| `login` / `account` | optional Google sign-in, kept in the search profile |
 
-Chinchilla looks for `npx` on `PATH` and in `~/.local/node/bin`, `~/.nvm`,
-`~/.fnm`, `~/.volta` and `~/.bun`, so an nvm/local Node install works without
-touching your shell profile. The node directory is prepended to the server's
-`PATH` because the package shebang is `/usr/bin/env node`.
+A turn may make **4 tool calls within 20 seconds**. Sources come back as a
+numbered list under the answer and the text cites them as `[1]`, `[2]`. The
+**Web** toggle is stored per session, so a conversation can be kept offline while
+others search.
 
-Change the command in **Settings → Web**, point `CHROME_PATH` at your browser
-(default `/usr/bin/google-chrome`) and set `GSEARCH_PROFILE` if the searches
-should use a specific profile (default `~/.dsh-chrome-google`). These overrides
-are also read from the environment and from `.env`:
-
-```
-WEBSEARCH_MCP_COMMAND=/home/me/.local/node/bin/npx
-WEBSEARCH_MCP_ARGS=-y dsh-google-chrome-search mcp
-CHROME_PATH=/usr/bin/google-chrome
-GSEARCH_PROFILE=~/.dsh-chrome-google
-```
-
-`chinchilla doctor --verbose` prints the resolved command, browser and profile.
-A turn may call the tools four times, twenty seconds in total; sources are
-shown under the answer and cited in the text.
+Setup, the profile layout and the CAPTCHA behaviour are in
+[Installation step 5](#5-web-search).
 
 ### Where things live
 
@@ -312,6 +424,8 @@ shown under the answer and cited in the text.
 | Sessions | `~/.local/share/chinchilla/sessions/<id>.json` |
 | Captures | `~/.local/share/chinchilla/captures/<id>.jpg` |
 | Log | `~/.local/state/chinchilla/chinchilla.log` |
+| Web search Chrome profile | `~/.dsh-chrome-google/` (`settings`, `browser/`, `screenshots/`, `downloads/`) |
+| npm cache for the MCP server | `~/.npm/_npx/` |
 
 ## Desktop notes
 
