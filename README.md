@@ -42,6 +42,7 @@ Keys can also be saved from the settings dialog; environment variables win.
 
 ```bash
 chinchilla shortcuts install     # Ctrl+Alt+A -> chinchilla capture --panel
+                                 # (reinstall after moving the checkout)
 chinchilla daemon                # tray icon, no capture (use it at login)
 chinchilla capture --panel       # capture a region and open the panel
 chinchilla settings              # language, quick actions, providers, web, data
@@ -54,17 +55,33 @@ Inside the panel: `Ctrl+R` adds another cut, `Ctrl+N` starts a session,
 
 ### Web search
 
-The agent can call `search`, `fetch` and `search_and_fetch` through an MCP
-server over stdio. The default command is:
+The agent can call `search`, `fetch` and `search_and_fetch` through the same
+MCP server the other desktop project uses:
 
 ```
 npx -y dsh-google-chrome-search mcp
 ```
 
-Change it in **Settings → Web**, point `CHROME_PATH` at your browser and set
-`GSEARCH_PROFILE` if the searches should use a specific profile. A turn may
-call the tools four times, twenty seconds in total; sources are shown under the
-answer and cited in the text.
+Chinchilla looks for `npx` on `PATH` and in `~/.local/node/bin`, `~/.nvm`,
+`~/.fnm`, `~/.volta` and `~/.bun`, so an nvm/local Node install works without
+touching your shell profile. The node directory is prepended to the server's
+`PATH` because the package shebang is `/usr/bin/env node`.
+
+Change the command in **Settings → Web**, point `CHROME_PATH` at your browser
+(default `/usr/bin/google-chrome`) and set `GSEARCH_PROFILE` if the searches
+should use a specific profile (default `~/.dsh-chrome-google`). These overrides
+are also read from the environment and from `.env`:
+
+```
+WEBSEARCH_MCP_COMMAND=/home/me/.local/node/bin/npx
+WEBSEARCH_MCP_ARGS=-y dsh-google-chrome-search mcp
+CHROME_PATH=/usr/bin/google-chrome
+GSEARCH_PROFILE=~/.dsh-chrome-google
+```
+
+`chinchilla doctor --verbose` prints the resolved command, browser and profile.
+A turn may call the tools four times, twenty seconds in total; sources are
+shown under the answer and cited in the text.
 
 ### Where things live
 

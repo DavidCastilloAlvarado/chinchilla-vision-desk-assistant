@@ -19,6 +19,7 @@ from .gtk import Gdk, GLib, Gtk
 LOGGER = log.get("app")
 APP_ID = "io.github.chinchilla.App"
 PUMP_MS = 60
+CAPTURE_DELAY_MS = 450
 _DONE = AgentEvent("done")
 
 
@@ -149,9 +150,14 @@ class App(Gtk.Application):
             self._status("wait for the current answer", "error")
             return
         self.show_panel()
-        self._status("selecting a region")
-        thread = threading.Thread(target=self._capture_worker, daemon=True)
-        thread.start()
+        self._status("asking for the screen; accept the permission dialog once")
+        # GNOME refuses the screenshot access dialog unless the calling app owns
+        # the focused window, so let the panel settle before hitting the portal.
+        GLib.timeout_add(CAPTURE_DELAY_MS, self._spawn_capture_worker)
+
+    def _spawn_capture_worker(self) -> bool:
+        threading.Thread(target=self._capture_worker, daemon=True).start()
+        return False
 
     def _capture_worker(self) -> None:
         try:
@@ -297,7 +303,7 @@ class App(Gtk.Application):
         if not self.window.get_visible():
             self.window.show_at(geometry.width, geometry.height)
         else:
-            self.window.present()
+            self.window.present_with_time(Gdk.CURRENT_TIME)
 
     def hide_panel(self) -> None:
         if self.window is not None:

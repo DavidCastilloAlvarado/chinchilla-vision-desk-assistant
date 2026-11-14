@@ -509,6 +509,9 @@ class PanelWindow(Gtk.Window):
         self.set_skip_pager_hint(True)
         self.set_type_hint(Gdk.WindowTypeHint.UTILITY)
         self.set_keep_above(True)
+        # the portal only shows its access dialog when the calling app holds focus
+        self.set_accept_focus(True)
+        self.set_focus_on_map(True)
         self.set_wmclass("chinchilla", "Chinchilla")
         self.set_default_size(PANEL_WIDTH, 640)
         self.content = PanelContent(**kwargs)
@@ -565,7 +568,8 @@ class PanelWindow(Gtk.Window):
     def show_at(self, screen_width: int, screen_height: int) -> None:
         self.place(screen_width, screen_height)
         self.show_all()
-        self.present()
+        self.present_with_time(Gdk.CURRENT_TIME)
+        self.grab_focus()
 
 
 def _demo_capture() -> Path:

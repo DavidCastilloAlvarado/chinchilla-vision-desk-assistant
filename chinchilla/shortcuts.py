@@ -112,7 +112,25 @@ def install(
     _gsettings("set", schema, "name", name)
     _gsettings("set", schema, "command", command)
     _gsettings("set", schema, "binding", binding)
+    reload()
     return ShortcutStatus(True, True, binding=binding, command=command)
+
+
+def reload() -> None:
+    """Drop and re-add the slot so the keybinding daemon reads it again.
+
+    `gsd-media-keys` registers a custom shortcut when the slot appears in the
+    list; editing the slot afterwards is not always picked up, which leaves a
+    keybinding that silently does nothing.
+    """
+    if not available():
+        raise ShortcutError("gsettings not found")
+    paths = parse_keybindings(_gsettings("get", MEDIA_KEYS, "custom-keybindings"))
+    if BASE_PATH not in paths:
+        return
+    without = [path for path in paths if path != BASE_PATH]
+    _gsettings("set", MEDIA_KEYS, "custom-keybindings", format_keybindings(without))
+    _gsettings("set", MEDIA_KEYS, "custom-keybindings", format_keybindings(paths))
 
 
 def uninstall() -> ShortcutStatus:

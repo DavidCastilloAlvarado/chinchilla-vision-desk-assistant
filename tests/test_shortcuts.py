@@ -133,3 +133,25 @@ def test_cli_shortcuts_commands(fake_gsettings, capsys):
     assert main(["shortcuts", "status"]) == 0
     assert main(["shortcuts", "uninstall"]) == 0
     assert main(["shortcuts", "status"]) == 1
+
+def test_install_forces_a_reload_of_the_binding_list(fake_gsettings):
+    other = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/other/"
+    fake_gsettings.write_text(
+        json.dumps({f"{shortcuts.MEDIA_KEYS}|custom-keybindings": f"['{other}']"}),
+        encoding="utf-8",
+    )
+
+    shortcuts.install("chinchilla capture --panel")
+
+    registered = json.loads(fake_gsettings.read_text(encoding="utf-8"))[
+        f"{shortcuts.MEDIA_KEYS}|custom-keybindings"
+    ]
+    assert shortcuts.BASE_PATH in registered
+    assert other in registered
+
+
+def test_reload_without_the_slot_does_nothing(fake_gsettings):
+    shortcuts.reload()
+
+    data = json.loads(fake_gsettings.read_text(encoding="utf-8"))
+    assert shortcuts.MEDIA_KEYS + "|custom-keybindings" not in data
