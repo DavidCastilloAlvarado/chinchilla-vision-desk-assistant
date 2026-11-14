@@ -270,6 +270,10 @@ class PanelContent(Gtk.Box):
             self.add_turn(turn, scroll=False)
         self.scroll_to_bottom()
 
+    def set_title(self, title: str) -> None:
+        self.title_label.set_text(title or "New session")
+        self.title_label.set_tooltip_text(title or "New session")
+
     def set_captures(self, captures: list[Capture]) -> None:
         self._captures = list(captures)
         for child in self.thumb_stack.get_children():

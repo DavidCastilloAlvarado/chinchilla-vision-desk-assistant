@@ -14,6 +14,7 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import (  # noqa: E402,F401
     Gdk,
     GdkPixbuf,
+    Gio,
     GLib,
     Gtk,
     Pango,

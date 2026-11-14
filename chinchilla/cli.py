@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from . import __version__, paths
+from .shortcuts import DEFAULT_BINDING
 
 
 def _gtk_version() -> str:
@@ -78,6 +79,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         )
     )
 
+    from . import shortcuts
+
+    shortcut = shortcuts.status()
+    results.append(
+        _check("shortcut", shortcut.summary, shortcut.installed)
+    )
+
     if args.verbose:
         for line in capture.describe_backends():
             print(f"       {line}")
@@ -124,6 +132,11 @@ def cmd_capture(args: argparse.Namespace) -> int:
 
     from .core import capture
     from .runtime import ensure_gdk_backend
+
+    if args.panel:
+        from .ui.app import run_app
+
+        return run_app([])
 
     if args.source:
         os.environ["CHINCHILLA_CAPTURE_SOURCE"] = args.source
@@ -343,6 +356,37 @@ def cmd_settings(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_app(args: argparse.Namespace) -> int:
+    from .ui.app import run_app
+
+    return run_app([])
+
+
+def cmd_daemon(args: argparse.Namespace) -> int:
+    from .ui.app import run_app
+
+    return run_app([], capture=False)
+
+
+def cmd_shortcuts(args: argparse.Namespace) -> int:
+    from . import shortcuts
+
+    try:
+        if args.action == "install":
+            status = shortcuts.install(args.command, args.binding)
+        elif args.action == "uninstall":
+            status = shortcuts.uninstall()
+        else:
+            status = shortcuts.status()
+    except shortcuts.ShortcutError as exc:
+        print(f"shortcut error: {exc}", file=sys.stderr)
+        return 1
+    print(status.summary)
+    if args.action == "install" and status.installed:
+        print("log out and back in if the shortcut does not fire")
+    return 0 if (status.installed or args.action == "uninstall") else 1
+
+
 def cmd_panel(args: argparse.Namespace) -> int:
     from .runtime import ensure_gdk_backend
 
@@ -393,6 +437,7 @@ def build_parser() -> argparse.ArgumentParser:
     capture_parser.add_argument("--select", type=_parse_rect, help="skip the overlay with x,y,w,h")
     capture_parser.add_argument("--snapshot", help="write a PNG of the overlay")
     capture_parser.add_argument("--render", help="render the overlay to PNG and use --select")
+    capture_parser.add_argument("--panel", action="store_true", help="open the panel for the capture")
     capture_parser.set_defaults(func=cmd_capture)
 
     ask_parser = sub.add_parser("ask", help="send one prompt to the configured provider")
@@ -411,6 +456,20 @@ def build_parser() -> argparse.ArgumentParser:
     sessions_parser.add_argument("--render", help="render the session selector to a PNG")
     sessions_parser.add_argument("--demo", action="store_true", help="use sample rows when rendering")
     sessions_parser.set_defaults(func=cmd_sessions)
+
+    app_parser = sub.add_parser("app", help="run the panel application (starts a capture)")
+    app_parser.set_defaults(func=cmd_app)
+
+    daemon_parser = sub.add_parser("daemon", help="run in the background with a tray icon")
+    daemon_parser.set_defaults(func=cmd_daemon)
+
+    shortcuts_parser = sub.add_parser(
+        "shortcuts", help="install or inspect the GNOME keybinding"
+    )
+    shortcuts_parser.add_argument("action", nargs="?", choices=["status", "install", "uninstall"], default="status")
+    shortcuts_parser.add_argument("--binding", default=DEFAULT_BINDING, help="accelerator to bind")
+    shortcuts_parser.add_argument("--command", default="chinchilla capture --panel", help="command to run")
+    shortcuts_parser.set_defaults(func=cmd_shortcuts)
 
     settings_parser = sub.add_parser("settings", help="open the settings dialog")
     settings_parser.add_argument("--render", help="render the dialog to a PNG and exit")

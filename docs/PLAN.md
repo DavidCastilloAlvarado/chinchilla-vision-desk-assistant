@@ -58,6 +58,7 @@ Design source of truth: [`docs/wireframes/wireframes.html`](wireframes/wireframe
 | `chinchilla/ui/settings.py` | Settings dialog |
 | `chinchilla/ui/sessions.py` | Session selector popover |
 | `chinchilla/ui/tray.py` | Status icon menu |
+| `chinchilla/shortcuts.py` | GNOME custom keybinding install/status/remove |
 | `chinchilla/ui/app.py` | Single-instance application wiring |
 
 ## Build order
@@ -76,8 +77,8 @@ Each step is implemented, verified, and committed to `main` on its own.
 | 7 | Agent: prompts, images, turns, streaming events | unit tests over a stub provider | done |
 | 8 | Web search: MCP client, tool loop, citations | tests against a fake MCP stdio server | done |
 | 9 | Settings UI and session selector | `settings --render`, `sessions list --render`, round-trip tests | done |
-| 10 | App: single instance, tray, shortcut install | `shortcuts status`, live smoke run | next |
-| 11 | Docs: README, verification notes | full test suite + end-to-end run | pending |
+| 10 | App: single instance, tray, shortcut install | `shortcuts install/status/uninstall`, `app --render`, daemon activation | done |
+| 11 | Docs: README, verification notes | full test suite + end-to-end run | next |
 
 ## Environment notes
 

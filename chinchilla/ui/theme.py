@@ -32,6 +32,7 @@ window.chinchilla-panel {{
 .muted-label {{ color: {TEXT_MUTED}; font-size: 11px; }}
 .body-label {{ color: {TEXT}; font-size: 13px; }}
 .pill {{
+  background-image: none;
   background-color: {SURFACE_ALT};
   border: 1px solid {BORDER};
   border-radius: 999px;
@@ -99,6 +100,10 @@ textview.composer {{
   color: {TEXT};
   border: 1px solid {BORDER};
   border-radius: 6px;
+}}
+textview.composer text {{
+  background-color: {INK};
+  color: {TEXT};
 }}
 entry.composer {{
   background-color: {INK};
