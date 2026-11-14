@@ -162,6 +162,36 @@ def cmd_capture(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_panel(args: argparse.Namespace) -> int:
+    from .runtime import ensure_gdk_backend
+
+    ensure_gdk_backend()
+    from .ui import panel as panel_ui
+    from .ui.snapshot import offscreen_pixbuf, save_pixbuf
+
+    if args.render:
+        content = panel_ui.demo_content()
+        pixbuf = offscreen_pixbuf(content, panel_ui.PANEL_WIDTH, args.height)
+        target = save_pixbuf(pixbuf, args.render)
+        print(f"render written: {target}")
+        return 0
+
+    from .ui.gtk import Gtk, Gdk
+
+    window = panel_ui.PanelWindow()
+    window.content.set_session(
+        title="New session",
+        provider_label="no provider configured",
+    )
+    display = Gdk.Display.get_default()
+    monitor = display.get_primary_monitor() or display.get_monitor(0)
+    geometry = monitor.get_geometry()
+    window.show_at(geometry.width, geometry.height)
+    window.content.focus_composer()
+    Gtk.main()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="chinchilla", description=__doc__)
     parser.add_argument("--version", action="store_true", help="print the version")
@@ -183,6 +213,11 @@ def build_parser() -> argparse.ArgumentParser:
     capture_parser.add_argument("--snapshot", help="write a PNG of the overlay")
     capture_parser.add_argument("--render", help="render the overlay to PNG and use --select")
     capture_parser.set_defaults(func=cmd_capture)
+
+    panel_parser = sub.add_parser("panel", help="open the response panel")
+    panel_parser.add_argument("--render", help="render the panel to a PNG and exit")
+    panel_parser.add_argument("--height", type=int, default=760)
+    panel_parser.set_defaults(func=cmd_panel)
 
     overlay_parser = sub.add_parser("overlay", help="open the region selector")
     overlay_parser.add_argument("--source", help="image to use as the frozen background")

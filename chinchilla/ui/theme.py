@@ -20,6 +20,13 @@ window.chinchilla-panel {{
   background-color: {SURFACE_ALT};
   border: 1px solid {BORDER};
   border-radius: 8px;
+  padding: 8px 10px;
+}}
+.user-card {{
+  background-color: #232a36;
+  border: 1px solid #38404f;
+  border-radius: 8px;
+  padding: 8px 10px;
 }}
 .title-label {{ color: {TEXT}; font-weight: 600; }}
 .muted-label {{ color: {TEXT_MUTED}; font-size: 11px; }}
@@ -54,6 +61,31 @@ window.chinchilla-panel {{
   font-size: 11px;
 }}
 .ghost-button:hover {{ color: {TEXT}; border-color: {ACCENT_HEX}; }}
+.panel-frame {{
+  background-color: {SURFACE};
+  border: 1px solid {BORDER};
+  border-radius: 10px;
+}}
+.panel-root {{ background-color: {SURFACE}; }}
+button.session-title {{
+  color: {TEXT};
+  font-weight: 600;
+  font-size: 13px;
+  padding: 0;
+  background-image: none;
+  background-color: transparent;
+  border: none;
+}}
+.thumb {{ border: 1px solid {BORDER}; border-radius: 3px; }}
+.error-text {{ color: {DANGER}; }}
+.busy-text {{ color: {INFO}; }}
+.source-label {{ color: {TEXT_MUTED}; font-size: 11px; }}
+textview.composer {{
+  background-color: {INK};
+  color: {TEXT};
+  border: 1px solid {BORDER};
+  border-radius: 6px;
+}}
 entry.composer {{
   background-color: {INK};
   border: 1px solid {BORDER};
@@ -62,3 +94,23 @@ entry.composer {{
   padding: 6px 8px;
 }}
 """
+
+
+def apply_css() -> None:
+    """Install the stylesheet once per process."""
+    from .gtk import Gdk, Gtk
+
+    global _installed
+    if _installed:
+        return
+    provider = Gtk.CssProvider()
+    provider.load_from_data(CSS.encode("utf-8"))
+    screen = Gdk.Screen.get_default()
+    if screen is not None:
+        Gtk.StyleContext.add_provider_for_screen(
+            screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+    _installed = True
+
+
+_installed = False
