@@ -213,12 +213,33 @@ def cmd_ask(args: argparse.Namespace) -> int:
     return 0
 
 
+def _render_sessions(target: str, demo: bool = False) -> int:
+    from .runtime import ensure_gdk_backend
+
+    ensure_gdk_backend()
+    from .store import session as session_store
+    from .ui import sessions as sessions_ui
+    from .ui.snapshot import offscreen_pixbuf, save_pixbuf
+
+    pane = sessions_ui.SessionsPane(lambda *_: None, lambda: None)
+    pane.sessions = sessions_ui.demo_sessions() if demo else session_store.list_sessions()
+    if not pane.sessions:
+        pane.sessions = sessions_ui.demo_sessions()
+    pane._refill()
+    pixbuf = offscreen_pixbuf(pane, 380, 460)
+    print(f"render written: {save_pixbuf(pixbuf, target)}")
+    return 0
+
+
 def cmd_sessions(args: argparse.Namespace) -> int:
     import json
 
     from .store import config, session as session_store
 
     action = args.action
+    if action == "list" and args.render:
+        return _render_sessions(args.render, demo=args.demo)
+
     if action == "list":
         items = session_store.list_sessions(limit=args.limit)
         if args.json:
@@ -268,6 +289,58 @@ def cmd_sessions(args: argparse.Namespace) -> int:
 
     print(f"unknown action {action}", file=sys.stderr)
     return 2
+
+
+def _render_settings(settings, page: int, target: str) -> int:
+    """Show the dialog on the X11 backend and capture the requested tab.
+
+    An offscreen window paints once, so it cannot capture a tab switch; a real
+    window repaints like the app does.
+    """
+    from .runtime import ensure_gdk_backend
+
+    ensure_gdk_backend()
+    from .ui import settings as settings_ui
+    from .ui.gtk import GLib, Gtk
+    from .ui.snapshot import save_window_snapshot
+
+    window = settings_ui.SettingsWindow(settings)
+    window.show_all()
+
+    def select() -> bool:
+        window.content.set_current_page(page)
+        return False
+
+    def shoot() -> bool:
+        ok = save_window_snapshot(window, target)
+        print(f"render {'written' if ok else 'failed'}: {target}")
+        Gtk.main_quit()
+        return False
+
+    GLib.timeout_add(600, select)
+    GLib.timeout_add(1400, shoot)
+    Gtk.main()
+    return 0
+
+
+def cmd_settings(args: argparse.Namespace) -> int:
+    from .runtime import ensure_gdk_backend
+
+    ensure_gdk_backend()
+    from .store import config
+    from .ui import settings as settings_ui
+
+    settings = config.load_settings()
+    if args.render:
+        return _render_settings(settings, args.page, args.render)
+
+    from .ui.gtk import Gtk
+
+    window = settings_ui.SettingsWindow(settings)
+    window.connect("destroy", lambda *_: Gtk.main_quit())
+    window.show_all()
+    Gtk.main()
+    return 0
 
 
 def cmd_panel(args: argparse.Namespace) -> int:
@@ -335,7 +408,14 @@ def build_parser() -> argparse.ArgumentParser:
     sessions_parser.add_argument("--title", help="title for a new session")
     sessions_parser.add_argument("--limit", type=int, default=20)
     sessions_parser.add_argument("--json", action="store_true")
+    sessions_parser.add_argument("--render", help="render the session selector to a PNG")
+    sessions_parser.add_argument("--demo", action="store_true", help="use sample rows when rendering")
     sessions_parser.set_defaults(func=cmd_sessions)
+
+    settings_parser = sub.add_parser("settings", help="open the settings dialog")
+    settings_parser.add_argument("--render", help="render the dialog to a PNG and exit")
+    settings_parser.add_argument("--page", type=int, default=0, help="tab index to render")
+    settings_parser.set_defaults(func=cmd_settings)
 
     panel_parser = sub.add_parser("panel", help="open the response panel")
     panel_parser.add_argument("--render", help="render the panel to a PNG and exit")

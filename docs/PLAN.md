@@ -56,6 +56,7 @@ Design source of truth: [`docs/wireframes/wireframes.html`](wireframes/wireframe
 | `chinchilla/ui/overlay.py` | Frozen-frame selection layer |
 | `chinchilla/ui/panel.py` | Response panel and thread view |
 | `chinchilla/ui/settings.py` | Settings dialog |
+| `chinchilla/ui/sessions.py` | Session selector popover |
 | `chinchilla/ui/tray.py` | Status icon menu |
 | `chinchilla/ui/app.py` | Single-instance application wiring |
 
@@ -63,20 +64,20 @@ Design source of truth: [`docs/wireframes/wireframes.html`](wireframes/wireframe
 
 Each step is implemented, verified, and committed to `main` on its own.
 
-| # | Step | Verification |
-| --- | --- | --- |
-| 0 | Wireframes | HTML tag balance, headless render, no overflow |
-| 1 | Scaffold: `pyproject.toml`, package, CLI, docs | `python -m chinchilla version`, `doctor`, pytest |
-| 2 | Overlay: rubber band, size badge, magnifier, nudging, Esc | geometry unit tests + X11 window snapshot |
-| 3 | Capture: backend chain, crop, JPEG budget | backend selection tests, `file` backend round trip, `doctor` |
-| 4 | Panel: header, quick actions, thread, composer | X11 window snapshot vs. wireframe |
-| 5 | Store: session + settings files | round-trip tests, listing, retention |
-| 6 | Providers: OpenAI/Anthropic/OpenRouter/custom, streaming | fake-server tests for SSE + request shape |
-| 7 | Agent: prompts, images, turns, streaming events | unit tests over a stub provider |
-| 8 | Web search: MCP client, tool loop, citations | tests against a fake MCP stdio server |
-| 9 | Settings UI: actions, providers, web, data | snapshot + round-trip tests |
-| 10 | App: single instance, tray, shortcut install | `shortcuts status`, live smoke run |
-| 11 | Docs: README, verification notes | full test suite + end-to-end run |
+| # | Step | Verification | State |
+| --- | --- | --- | --- |
+| 0 | Wireframes | HTML tag balance, headless render, no overflow | done |
+| 1 | Scaffold: `pyproject.toml`, package, CLI, docs | `python -m chinchilla version`, `doctor`, pytest | done |
+| 2 | Overlay: rubber band, size badge, magnifier, nudging, Esc | geometry unit tests + X11 window snapshot | done |
+| 3 | Capture: backend chain, crop, JPEG budget | backend selection tests, `file` backend round trip, `doctor` | done |
+| 4 | Panel: header, quick actions, thread, composer | X11 window snapshot vs. wireframe | done |
+| 5 | Store: session + settings files | round-trip tests, listing, retention | done |
+| 6 | Providers: OpenAI/Anthropic/OpenRouter/custom, streaming | fake-server tests for SSE + request shape | done |
+| 7 | Agent: prompts, images, turns, streaming events | unit tests over a stub provider | done |
+| 8 | Web search: MCP client, tool loop, citations | tests against a fake MCP stdio server | done |
+| 9 | Settings UI and session selector | `settings --render`, `sessions list --render`, round-trip tests | done |
+| 10 | App: single instance, tray, shortcut install | `shortcuts status`, live smoke run | next |
+| 11 | Docs: README, verification notes | full test suite + end-to-end run | pending |
 
 ## Environment notes
 

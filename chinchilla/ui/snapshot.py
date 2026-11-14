@@ -64,14 +64,27 @@ def render_cairo(
     return target
 
 
-def offscreen_pixbuf(widget: Gtk.Widget, width: int, height: int) -> GdkPixbuf.Pixbuf:
-    """Paint a widget tree without showing a window."""
+def offscreen_pixbuf(
+    widget: Gtk.Widget,
+    width: int,
+    height: int,
+    prepare: Callable[[], None] | None = None,
+) -> GdkPixbuf.Pixbuf:
+    """Paint a widget tree without showing a window.
+
+    `prepare` runs once the tree is realized, which is the only moment some
+    widgets (a notebook's current page, for instance) accept a change.
+    """
     holder = Gtk.OffscreenWindow()
     holder.set_default_size(width, height)
     holder.add(widget)
     holder.show_all()
     while Gtk.events_pending():
         Gtk.main_iteration_do(False)
+    if prepare is not None:
+        prepare()
+        while Gtk.events_pending():
+            Gtk.main_iteration_do(False)
     pixbuf = holder.get_pixbuf()
     holder.remove(widget)
     holder.destroy()

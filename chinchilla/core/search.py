@@ -204,8 +204,8 @@ def scrub_citations(text: str, sources: list[Source]) -> str:
 
 
 class Budget:
-    def __init__(self, max_calls: int = MAX_TOOL_CALLS, seconds: float = TOOL_DEADLINE) -> None:
-        self.max_calls = max_calls
+    def __init__(self, max_calls: int | None = None, seconds: float = TOOL_DEADLINE) -> None:
+        self.max_calls = MAX_TOOL_CALLS if max_calls is None else max_calls
         self.deadline = time.monotonic() + seconds
         self.calls = 0
 

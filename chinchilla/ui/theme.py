@@ -80,6 +80,20 @@ button.session-title {{
 .error-text {{ color: {DANGER}; }}
 .busy-text {{ color: {INFO}; }}
 .source-label {{ color: {TEXT_MUTED}; font-size: 11px; }}
+.active-session {{ color: {ACCENT_HEX}; }}
+popover {{
+  background-color: {SURFACE};
+  border: 1px solid {BORDER};
+  border-radius: 10px;
+}}
+button.session-row {{
+  background-image: none;
+  background-color: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 6px;
+}}
+button.session-row:hover {{ background-color: {INK}; }}
 textview.composer {{
   background-color: {INK};
   color: {TEXT};

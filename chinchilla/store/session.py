@@ -68,10 +68,11 @@ class Session:
         return len([turn for turn in self.turns if turn.role == "user"])
 
     def preview(self, limit: int = 70) -> str:
-        for turn in reversed(self.turns):
-            if turn.text:
-                text = " ".join(turn.text.split())
-                return text[:limit]
+        """Last thing the user asked, which reads better than the answer."""
+        for wanted in ("user", "assistant"):
+            for turn in reversed(self.turns):
+                if turn.role == wanted and turn.text:
+                    return " ".join(turn.text.split())[:limit]
         return ""
 
     # ---------------------------------------------------------------- mutate
