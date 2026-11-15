@@ -510,3 +510,31 @@ def test_reasoning_reaches_the_session_file(xdg):
     stored = session_store.Session.load(app.session.id)
     assert stored.turns[-1].reasoning == "the user wants a poem"
     assert stored.turns[-1].text == "Hello from the stub."
+
+
+def test_the_footer_says_when_copilot_is_not_signed_in(xdg):
+    app, _provider = _app()
+    app.settings.active_provider = "copilot"
+
+    app.refresh_panel()
+
+    assert app.window.content.provider_label.get_text() == "github copilot \u00b7 not signed in"
+
+
+def test_the_footer_asks_for_a_model_once_copilot_is_signed_in(xdg, tmp_path, monkeypatch):
+    from chinchilla.core import copilot
+
+    path = tmp_path / "copilot.json"
+    copilot.Credentials(github_token="gho_x", token="t", expires_at=9_999_999_999, login="david").save(path)
+    monkeypatch.setattr(copilot.Credentials, "path", classmethod(lambda cls: path))
+    app, _provider = _app()
+    app.settings.active_provider = "copilot"
+
+    app.refresh_panel()
+
+    assert app.window.content.provider_label.get_text() == "github copilot \u00b7 pick a model"
+
+    app.settings.providers["copilot"].model = "claude-sonnet-5"
+    app.refresh_panel()
+
+    assert app.window.content.provider_label.get_text() == "github copilot \u00b7 claude-sonnet-5"

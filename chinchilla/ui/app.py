@@ -9,6 +9,7 @@ from typing import Callable
 
 from .. import log, paths, shortcuts
 from ..core import capture as capture_module
+from ..core import copilot as copilot_module
 from ..core import permission
 from ..core.agent import Agent, AgentEvent
 from ..core.thread import Turn, Usage
@@ -141,13 +142,26 @@ class App(Gtk.Application):
         self._sync_provider_label()
         return changed
 
+    def _provider_label(self) -> str:
+        """Footer label, honest about a Copilot session that is missing."""
+        if self.settings.active().kind == "copilot":
+            credentials = copilot_module.Credentials.load()
+            if not credentials.signed_in:
+                return "github copilot \u00b7 not signed in"
+            if not self.settings.active().model:
+                return "github copilot \u00b7 pick a model"
+        return self.settings.provider_label()
+
     def _sync_provider_label(self) -> None:
         """Show the live provider, its model and the endpoint behind the tooltip."""
         if self.window is None:
             return
         label = self.window.content.provider_label
-        label.set_text(self.settings.provider_label())
+        label.set_text(self._provider_label())
         provider = config.resolved_provider(self.settings)
+        if provider.kind == "copilot":
+            label.set_tooltip_text(copilot_module.Credentials.load().describe())
+            return
         label.set_tooltip_text(
             f"{provider.base_url or 'no endpoint'} ({config.key_source(provider.id)})"
         )
@@ -159,7 +173,7 @@ class App(Gtk.Application):
             title=self.session.title,
             turns=self.session.turns,
             captures=self.session.captures,
-            provider_label=self.settings.provider_label(),
+            provider_label=self._provider_label(),
             web_enabled=self.session.web_enabled,
         )
         self.window.content.set_effort(self.settings.reasoning_effort)

@@ -107,7 +107,9 @@ re-run `chinchilla shortcuts install` if you do.
 
 Pick one provider in the settings dialog (`chinchilla settings`) and give it a
 key. Keys are read from the environment, then from `.env`, then from the
-credentials file written by the settings dialog.
+credentials file written by the settings dialog. The fifth provider, **GitHub
+Copilot**, needs no key at all: it signs in with your subscription (see
+[GitHub Copilot](#github-copilot-subscription-login)).
 
 ```bash
 cp .env.example .env        # or create .env next to pyproject.toml
@@ -157,6 +159,51 @@ Rules that are easy to trip over:
   **No restart, no logout**: edit the file, press the hotkey. The header shows
   the live model and the endpoint behind its tooltip, so you can see which
   server you are actually talking to.
+
+#### GitHub Copilot (subscription login)
+
+The `copilot` provider uses your GitHub Copilot seat instead of an API key, so
+there is nothing to paste: the app opens the GitHub device page, you type a
+six-character code, and the model list comes from your subscription.
+
+```bash
+chinchilla copilot login      # opens the browser, prints the code, waits
+chinchilla copilot status      # signed in as ..., api host, token lifetime
+chinchilla copilot models      # every chat model your seat can pick
+chinchilla copilot-use claude-sonnet-5  # make it the active provider
+chinchilla copilot logout      # forget the token
+```
+
+The same thing lives in the GUI: **Settings → Providers → GitHub Copilot** has
+**Sign in with GitHub**, **Sign out**, **Reload models** and the model dropdown.
+Pick a model, press **Save**, and the footer reads `github copilot · Claude
+Sonnet 5` (`github copilot · not signed in` before the login).
+
+How it works, and what it writes:
+
+| Piece | Detail |
+| --- | --- |
+| sign-in | OAuth device flow (`github.com/login/device`, client id of the Copilot editor plugins, scope `read:user`) |
+| token | the GitHub token is traded for a short lived Copilot token (`api.github.com/copilot_internal/v2/token`) and refreshed automatically before it expires |
+| storage | `~/.config/chinchilla/copilot.json`, mode `0600`; the app never logs it and `chinchilla copilot logout` deletes it |
+| endpoint | `https://api.githubcopilot.com`, an OpenAI-compatible `/chat/completions` |
+| models | `GET /models`, filtered to the ones served on `/chat/completions` (the GPT-5-and-later and grok models are `/responses` only and would answer every turn with a 400) |
+
+Caveats worth knowing:
+
+- These are the endpoints the official Copilot editor plugins use, **not a
+  documented public API**; GitHub can change them and a future release of this
+  app may need adjusting. Everything still respects your subscription limits.
+- The published `github-copilot-sdk` drives the Copilot CLI runtime over
+  JSON-RPC (a downloaded Node runtime plus a process per session). It is not
+  used here: this provider streams straight into the panel like the other four,
+  with no extra dependency to install on the crew's machines.
+- Copilot models reject `temperature` and sometimes `reasoning_effort`; both are
+  optional and the request is retried without them, so a model that refuses one
+  still answers. When the refusal lists the levels a model does take
+  (`gemini-4-hydrogen` stops at `xhigh`), the provider retries with the closest
+  lower one instead of losing the reasoning (`claude-haiku-4.5` takes none at
+  all, so there it is dropped).
 
 #### Local models (vLLM, llama.cpp, Ollama)
 
@@ -439,6 +486,9 @@ chinchilla capture --panel       # capture a region and open the panel
 chinchilla settings              # tabs: General, Actions, Providers, Web, Data
 chinchilla sessions list         # stored conversations
 chinchilla search "query"        # one web search through the MCP server
+chinchilla copilot status        # GitHub Copilot subscription sign-in state
+chinchilla copilot login         # device flow: shows a code to type on github.com
+chinchilla copilot models        # models the subscription offers
 chinchilla doctor                # environment, provider, capture and shortcut state
 chinchilla doctor --verbose      # plus the resolved paths, servers and tools
 ```

@@ -120,7 +120,8 @@ button.tool:hover {{ border-color: #3a4354; color: #dfe5f0; }}
 button.tool.on {{ background-color: #1a2333; border-color: #2b3f6b; color: #dbe6ff; }}
 /* Adwaita paints an orange keyboard ring on the last clicked button; the
    selected state of these chips already says where the focus is. */
-button.tool:focus, button.act:focus, button.foot-btn:focus, button.set-tab:focus, button.set-switch:focus {{
+button.tool:focus, button.act:focus, button.foot-btn:focus, button.set-tab:focus,
+button.set-switch:focus, button.ghost-button:focus {{
   outline: none;
   box-shadow: none;
 }}
@@ -281,6 +282,19 @@ label.reasoning-body {{
   border-left: 2px solid #2c3340;
   padding-left: 6px;
 }}
+
+/* ----------------------------------------------------------- copilot login */
+label.copilot-code {{
+  font-family: monospace;
+  font-size: 22px;
+  letter-spacing: 3px;
+  color: {TEXT};
+  background-color: #1b2028;
+  border: 1px solid #2c3340;
+  border-radius: 6px;
+  padding: 4px 10px;
+}}
+label.copilot-link {{ color: {INFO}; font-size: 11.5px; }}
 
 /* ----------------------------------------------------------- generic bits */
 label.muted-label {{ color: {TEXT_MUTED}; font-size: 10.5px; }}

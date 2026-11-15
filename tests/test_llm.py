@@ -38,6 +38,31 @@ def test_openai_streams_text_and_usage():
     assert provider.last_usage["prompt_tokens"] == 12
 
 
+def test_the_image_media_type_matches_the_bytes():
+    png = b"\x89PNG\r\n\x1a\n" + b"rest"
+
+    assert llm._data_uri(png).startswith("data:image/png;base64,")
+    assert llm._data_uri(b"\xff\xd8\xffrest").startswith("data:image/jpeg;base64,")
+    assert llm._data_uri(b"GIF89arest").startswith("data:image/gif;base64,")
+    assert llm._data_uri(b"RIFF\x00\x00\x00\x00WEBPrest").startswith("data:image/webp;base64,")
+    assert llm._data_uri(b"unknown").startswith("data:image/jpeg;base64,")
+
+
+def test_anthropic_sends_the_real_media_type():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, text='data: {"type":"message_stop"}\n\n')
+
+    provider = llm.Anthropic("anthropic", "https://api.test", "sk-x", "claude", client=make_client(handler))
+    png = b"\x89PNG\r\n\x1a\n" + b"rest"
+    list(provider.chat([llm.Message("user", "what is this", images=[png])]))
+
+    block = captured["body"]["messages"][0]["content"][0]
+    assert block["source"]["media_type"] == "image/png"
+
+
 def test_openai_request_contains_image_and_tools():
     captured = {}
 

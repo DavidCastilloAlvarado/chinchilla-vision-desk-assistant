@@ -36,6 +36,13 @@ PROVIDERS: dict[str, dict[str, str]] = {
         "key_env": "OPENROUTER_API_KEY",
         "kind": "openai",
     },
+    "copilot": {
+        "label": "GitHub Copilot",
+        "base_url": "https://api.githubcopilot.com",
+        "model": "",
+        "key_env": "",
+        "kind": "copilot",
+    },
     "custom": {
         "label": "Custom",
         "base_url": "",

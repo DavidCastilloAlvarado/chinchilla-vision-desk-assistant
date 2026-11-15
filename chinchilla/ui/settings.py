@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Callable
 
-from ..core import search
+from ..core import copilot, search
 from ..store import config
 from . import theme
-from .gtk import Gtk
+from .gtk import GLib, Gtk
 from .widgets import place_knob
 
 def _label(text: str, muted: bool = False, wrap: bool = False) -> Gtk.Label:
@@ -353,6 +354,9 @@ class SettingsContent(Gtk.Box):
             group = group or radio
             radio.set_active(self.settings.active_provider == provider.id)
             page.pack_start(radio, False, False, 0)
+            if provider.id == "copilot":
+                self._build_copilot(page, radio)
+                continue
 
             grid = Gtk.Grid(column_spacing=10, row_spacing=6)
             grid.set_margin_start(24)
@@ -385,6 +389,117 @@ class SettingsContent(Gtk.Box):
                 "model": model,
                 "status": status,
             }
+
+    def _build_copilot(self, page: Gtk.Box, radio: Gtk.RadioButton) -> None:
+        self.copilot_credentials = copilot.Credentials.load()
+        self.copilot_models: list[copilot.CopilotModel] = []
+        self.copilot_status = _label("", muted=True, wrap=True)
+        self.copilot_combo = Gtk.ComboBoxText()
+        self.copilot_combo.set_size_request(240, -1)
+        self.copilot_combo.set_tooltip_text("the models your Copilot subscription offers")
+
+        self.copilot_sign_in = Gtk.Button(label="Sign in with GitHub")
+        self.copilot_sign_in.set_relief(Gtk.ReliefStyle.NONE)
+        self.copilot_sign_in.get_style_context().add_class("ghost-button")
+        self.copilot_sign_in.connect("clicked", lambda *_: self._on_copilot_sign_in())
+        self.copilot_sign_out = Gtk.Button(label="Sign out")
+        self.copilot_sign_out.set_relief(Gtk.ReliefStyle.NONE)
+        self.copilot_sign_out.get_style_context().add_class("ghost-button")
+        self.copilot_sign_out.connect("clicked", lambda *_: self._on_copilot_sign_out())
+        self.copilot_reload = Gtk.Button(label="Reload models")
+        self.copilot_reload.set_relief(Gtk.ReliefStyle.NONE)
+        self.copilot_reload.get_style_context().add_class("ghost-button")
+        self.copilot_reload.connect("clicked", lambda *_: self._load_copilot_models())
+
+        grid = Gtk.Grid(column_spacing=10, row_spacing=6)
+        grid.set_margin_start(24)
+        grid.attach(_lbl("Model"), 0, 0, 1, 1)
+        grid.attach(self.copilot_combo, 1, 0, 2, 1)
+        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        buttons.pack_start(self.copilot_sign_in, False, False, 0)
+        buttons.pack_start(self.copilot_sign_out, False, False, 0)
+        buttons.pack_start(self.copilot_reload, False, False, 0)
+        grid.attach(buttons, 1, 1, 2, 1)
+        grid.attach(self.copilot_status, 1, 2, 2, 1)
+        page.pack_start(grid, False, False, 0)
+        page.pack_start(
+            _label(
+                "Uses your GitHub Copilot subscription: the sign-in opens github.com/login/device, "
+                "and the model list comes from the subscription. No API key is stored.",
+                muted=True,
+                wrap=True,
+            ),
+            False,
+            False,
+            0,
+        )
+
+        self.provider_widgets.setdefault("copilot", {})["radio"] = radio
+        self.provider_widgets["copilot"]["model"] = self.copilot_combo
+        self._refresh_copilot()
+
+    # ---------------------------------------------------------- copilot state
+
+    def _refresh_copilot(self) -> None:
+        signed_in = self.copilot_credentials.signed_in
+        self.copilot_sign_out.set_sensitive(signed_in)
+        self.copilot_reload.set_sensitive(signed_in)
+        if not signed_in:
+            self.copilot_combo.remove_all()
+            self.copilot_status.set_text("not signed in")
+            return
+        self.copilot_status.set_text(f"{self.copilot_credentials.describe()} \u00b7 loading models\u2026")
+        self._load_copilot_models()
+
+    def _load_copilot_models(self) -> None:
+        if not self.copilot_credentials.signed_in:
+            self.copilot_status.set_text("not signed in")
+            return
+        self.copilot_status.set_text("loading models\u2026")
+        threading.Thread(target=self._copilot_models_worker, daemon=True).start()
+
+    def _copilot_models_worker(self) -> None:
+        try:
+            models = copilot.list_models(self.copilot_credentials.session())
+        except copilot.CopilotError as exc:
+            GLib.idle_add(self.copilot_status.set_text, f"cannot list models: {exc}")
+            return
+        GLib.idle_add(self._copilot_models_loaded, models)
+
+    def _copilot_models_loaded(self, models: list[copilot.CopilotModel]) -> bool:
+        self.copilot_models = models
+        current = self.settings.providers["copilot"].model
+        self.copilot_combo.remove_all()
+        for model in models:
+            self.copilot_combo.append(model.id, model.label)
+        wanted = current if current in {model.id for model in models} else (models[0].id if models else "")
+        if wanted:
+            self.copilot_combo.set_active_id(wanted)
+        count = len(models)
+        self.copilot_status.set_text(
+            f"{self.copilot_credentials.describe()} \u00b7 {count} models"
+            if count
+            else "signed in, but this subscription offers no chat model"
+        )
+        return False
+
+    def _on_copilot_sign_in(self) -> None:
+        from .copilot_login import CopilotLoginDialog
+
+        window = self.get_toplevel()
+        dialog = CopilotLoginDialog(window if isinstance(window, Gtk.Window) else None)
+        dialog.run()
+        dialog.destroy()
+        if dialog.credentials is not None:
+            self.copilot_credentials = dialog.credentials
+        elif dialog.error:
+            self.copilot_status.set_text(dialog.error)
+            return
+        self._refresh_copilot()
+
+    def _on_copilot_sign_out(self) -> None:
+        self.copilot_credentials.clear()
+        self._refresh_copilot()
 
     def _build_web(self) -> None:
         page = self._page("Web")
@@ -528,6 +643,11 @@ class SettingsContent(Gtk.Box):
 
         for provider_id, widgets in self.provider_widgets.items():
             provider = settings.providers[provider_id]
+            if provider_id == "copilot":
+                provider.model = self.copilot_combo.get_active_id() or provider.model
+                if widgets["radio"].get_active():
+                    settings.active_provider = provider_id
+                continue
             provider.base_url = widgets["base_url"].get_text().strip().rstrip("/")
             provider.model = widgets["model"].get_text().strip()
             if provider_id == "custom":

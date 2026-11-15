@@ -59,17 +59,29 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     settings = config.load_settings()
     provider = config.resolved_provider(settings)
-    source = config.key_source(provider.id)
-    local = config.is_local_endpoint(provider.base_url)
-    if source == "missing" and local:
-        source = "not needed by a local server"
-    results.append(
-        _check(
-            "provider",
-            f"{provider.id} model={provider.model or 'unset'} key={source}",
-            bool(provider.model) and (source != "missing" or local),
+    if provider.kind == "copilot":
+        from .core import copilot
+
+        credentials = copilot.Credentials.load()
+        results.append(
+            _check(
+                "provider",
+                f"copilot model={provider.model or 'unset'} ({credentials.describe()})",
+                bool(provider.model) and credentials.signed_in,
+            )
         )
-    )
+    else:
+        source = config.key_source(provider.id)
+        local = config.is_local_endpoint(provider.base_url)
+        if source == "missing" and local:
+            source = "not needed by a local server"
+        results.append(
+            _check(
+                "provider",
+                f"{provider.id} model={provider.model or 'unset'} key={source}",
+                bool(provider.model) and (source != "missing" or local),
+            )
+        )
 
     from .core import capture
 
@@ -429,6 +441,97 @@ def _render_settings(settings, page: int, target: str) -> int:
     return 0
 
 
+def cmd_copilot(args: argparse.Namespace) -> int:
+    from .core import copilot
+    from .store import config
+
+    credentials = copilot.Credentials.load()
+    if args.action == "logout":
+        credentials.clear()
+        print("signed out of GitHub Copilot")
+        return 0
+    if args.action == "status":
+        print(f"github copilot: {credentials.describe()}")
+        if not credentials.signed_in:
+            print("run: chinchilla copilot login")
+            return 1
+        try:
+            session = credentials.session()
+        except copilot.CopilotError as exc:
+            print(f"copilot token: {exc}")
+            return 1
+        print(f"api: {session.api}")
+        if session.expires_at:
+            print(f"token expires in {int(session.expires_in)}s")
+        models = copilot.list_models(session)
+        chosen = args.model or config.load_settings().providers["copilot"].model
+        print(f"models: {len(models)}")
+        print(f"model: {chosen or '(not set, pick one in Settings \u203a Providers)'}")
+        return 0
+    if args.action == "models":
+        try:
+            session = credentials.session()
+            models = copilot.list_models(session)
+        except copilot.CopilotError as exc:
+            print(f"cannot list models: {exc}", file=sys.stderr)
+            return 1
+        for model in models:
+            print(f"{model.id}\t{model.label}")
+        return 0
+
+    # login
+    import webbrowser
+
+    def on_code(device) -> None:
+        print(f"open {device.verification_uri} and enter the code: {device.user_code}")
+        try:
+            webbrowser.open(device.verification_uri)
+        except Exception:  # headless is fine, the code is printed
+            pass
+
+    print("waiting for the GitHub login (Ctrl+C to cancel)…")
+    try:
+        credentials = copilot.login(on_code=on_code)
+        session = credentials.session()
+        models = copilot.list_models(session)
+    except copilot.CopilotError as exc:
+        print(f"login failed: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("cancelled", file=sys.stderr)
+        return 130
+    print(f"signed in as {credentials.login or 'unknown'} \u00b7 {len(models)} models")
+    for model in models:
+        print(f"  {model.id}")
+    print("pick one in Settings \u203a Providers, or save it now:")
+    print(f"  chinchilla copilot use {models[0].id}" if models else "")
+    return 0
+
+
+def cmd_copilot_use(args: argparse.Namespace) -> int:
+    from .core import copilot
+
+    credentials = copilot.Credentials.load()
+    if not credentials.signed_in:
+        print("run: chinchilla copilot login", file=sys.stderr)
+        return 1
+    try:
+        models = copilot.list_models(credentials.session())
+    except copilot.CopilotError as exc:
+        print(f"cannot list models: {exc}", file=sys.stderr)
+        return 1
+    if args.model not in {model.id for model in models}:
+        print(f"unknown model: {args.model}", file=sys.stderr)
+        print("available: " + ", ".join(model.id for model in models), file=sys.stderr)
+        return 1
+    settings = config.load_settings()
+    settings.active_provider = "copilot"
+    settings.providers["copilot"].model = args.model
+    config.save_settings(settings)
+    print(f"github copilot \u00b7 {args.model} is now the active provider")
+    return 0
+
+
 def cmd_settings(args: argparse.Namespace) -> int:
     from .runtime import ensure_gdk_backend
 
@@ -600,6 +703,19 @@ def build_parser() -> argparse.ArgumentParser:
     settings_parser.add_argument("--render", help="render the dialog to a PNG and exit")
     settings_parser.add_argument("--page", type=int, default=0, help="tab index to render")
     settings_parser.set_defaults(func=cmd_settings)
+
+    copilot_parser = sub.add_parser("copilot", help="sign in to GitHub Copilot")
+    copilot_parser.add_argument(
+        "action", nargs="?", choices=["status", "login", "logout", "models"], default="status"
+    )
+    copilot_parser.add_argument("--model", help="model id to report in status")
+    copilot_parser.set_defaults(func=cmd_copilot)
+
+    copilot_use_parser = sub.add_parser(
+        "copilot-use", help="make GitHub Copilot the active provider with a model"
+    )
+    copilot_use_parser.add_argument("model")
+    copilot_use_parser.set_defaults(func=cmd_copilot_use)
 
     panel_parser = sub.add_parser("panel", help="open the response panel")
     panel_parser.add_argument("--render", help="render the panel to a PNG and exit")

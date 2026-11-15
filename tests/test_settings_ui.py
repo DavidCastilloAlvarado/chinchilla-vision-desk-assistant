@@ -10,6 +10,12 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolated_config(xdg):
+    """Never read the real ~/.config/chinchilla, the Copilot block looks there."""
+    return xdg
+
+
 def _content(settings=None):
     from chinchilla.ui.settings import SettingsContent
 
@@ -186,3 +192,99 @@ def test_the_general_page_sets_the_output_budget():
     content.tokens_spin.set_value(8192)
 
     assert content.collect().max_tokens == 8192
+
+
+def test_the_copilot_block_starts_signed_out():
+    content = _content()
+
+    assert content.provider_widgets["copilot"]["model"] is content.copilot_combo
+    assert content.copilot_combo.get_active_id() is None
+    assert content.copilot_status.get_text() == "not signed in"
+    assert content.copilot_sign_out.get_sensitive() is False
+
+
+def test_the_model_list_fills_the_combo_and_keeps_the_saved_choice():
+    from chinchilla.core import copilot
+
+    settings = config.default_settings()
+    settings.providers["copilot"].model = "claude-sonnet-4"
+    content = _content(settings)
+
+    content._copilot_models_loaded(
+        [
+            copilot.CopilotModel(id="gpt-4o", name="GPT-4o"),
+            copilot.CopilotModel(id="claude-sonnet-4", name="Claude Sonnet 4"),
+        ]
+    )
+
+    assert content.copilot_combo.get_active_id() == "claude-sonnet-4"
+    assert "2 models" in content.copilot_status.get_text()
+
+
+def test_an_unknown_saved_model_falls_back_to_the_first_one():
+    from chinchilla.core import copilot
+
+    settings = config.default_settings()
+    settings.providers["copilot"].model = "retired-model"
+    content = _content(settings)
+
+    content._copilot_models_loaded([copilot.CopilotModel(id="gpt-4o", name="GPT-4o")])
+
+    assert content.copilot_combo.get_active_id() == "gpt-4o"
+
+
+def test_collect_activates_copilot_with_the_chosen_model():
+    from chinchilla.core import copilot
+
+    content = _content()
+    content.provider_widgets["copilot"]["radio"].set_active(True)
+    content._copilot_models_loaded([copilot.CopilotModel(id="gpt-4o", name="GPT-4o")])
+
+    collected = content.collect()
+
+    assert collected.active_provider == "copilot"
+    assert collected.providers["copilot"].model == "gpt-4o"
+
+
+def test_signing_out_clears_the_model_list(monkeypatch, tmp_path):
+    from chinchilla.core import copilot
+
+    path = tmp_path / "copilot.json"
+    copilot.Credentials(github_token="gho_x", token="tid", expires_at=9_999_999_999, login="david").save(path)
+    monkeypatch.setattr(copilot.Credentials, "path", classmethod(lambda cls: path))
+    monkeypatch.setattr(copilot, "list_models", lambda session, client=None: [])
+
+    content = _content()
+    content._copilot_models_loaded([copilot.CopilotModel(id="gpt-4o")])
+    content._on_copilot_sign_out()
+
+    assert content.copilot_combo.get_active_id() is None
+    assert content.copilot_status.get_text() == "not signed in"
+    assert not path.exists()
+
+
+def test_the_login_dialog_starts_the_flow_and_closes_itself():
+    from chinchilla.core import copilot
+    from chinchilla.ui.copilot_login import CopilotLoginDialog
+
+    shown = []
+
+    def fake_login(on_code=None, **_kwargs):
+        device = copilot.DeviceCode(
+            device_code="dev",
+            user_code="ABCD-1234",
+            verification_uri="https://github.com/login/device",
+        )
+        if on_code is not None:
+            on_code(device)
+        shown.append("code")
+        return copilot.Credentials(github_token="gho_x", token="t", expires_at=1, login="david")
+
+    dialog = CopilotLoginDialog(login=fake_login)
+    dialog.run()
+
+    assert shown == ["code"]
+    assert dialog.credentials is not None
+    assert dialog.credentials.login == "david"
+    assert dialog.code_label.get_text() == "ABCD-1234"
+    dialog.destroy()

@@ -22,7 +22,11 @@ LOGGER = log.get("llm")
 DEFAULT_TIMEOUT = 120.0
 ANTHROPIC_VERSION = "2023-06-01"
 # optional payload fields, and the attribute that stops sending each one
-_FIELD_FLAGS = {"reasoning_effort": "_drop_reasoning", "max_tokens": "_drop_max_tokens"}
+_FIELD_FLAGS = {
+    "reasoning_effort": "_drop_reasoning",
+    "max_tokens": "_drop_max_tokens",
+    "temperature": "_drop_temperature",
+}
 
 
 class ProviderError(RuntimeError):
@@ -99,8 +103,22 @@ def max_tokens_from_error(exc: ProviderError) -> int | None:
     return None
 
 
+def _image_media_type(image: bytes) -> str:
+    """The real format, so a server that validates it does not refuse the turn."""
+    if image.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if image.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if image.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if image[:4] == b"RIFF" and image[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/jpeg"
+
+
 def _data_uri(image: bytes) -> str:
-    return "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")
+    media = _image_media_type(image)
+    return f"data:{media};base64," + base64.b64encode(image).decode("ascii")
 
 
 def _sse_events(lines: Iterable[str]) -> Iterator[dict]:
@@ -188,6 +206,7 @@ class OpenAICompatible:
         self.last_finish_reason = ""
         self._drop_reasoning = False
         self._drop_max_tokens = False
+        self._drop_temperature = False
         self._client = client
         self.last_usage: dict[str, int] = {}
 
@@ -208,9 +227,10 @@ class OpenAICompatible:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": [self._message(item) for item in messages],
-            "temperature": self.temperature,
             "stream": stream,
         }
+        if self.temperature is not None and not self._drop_temperature:
+            payload["temperature"] = self.temperature
         if self.max_tokens and not self._drop_max_tokens:
             payload["max_tokens"] = self.max_tokens
         if stream:
@@ -284,8 +304,15 @@ class OpenAICompatible:
                 field = None if emitted else self._refused_field(exc)
                 if field is None:
                     raise
+                if self._narrow_optional(field, exc):
+                    LOGGER.warning("%s: retrying with a narrower %s (%s)", self.id, field, exc)
+                    continue
                 LOGGER.warning("%s: retrying without %s (%s)", self.id, field, exc)
                 setattr(self, _FIELD_FLAGS[field], True)
+
+    def _narrow_optional(self, field: str, exc: ProviderError) -> bool:
+        """Replace a refused optional value with one the server accepts."""
+        return False
 
     def _refused_field(self, exc: ProviderError) -> str | None:
         """Optional payload fields this server dislikes, so we can retry without them."""
@@ -298,6 +325,12 @@ class OpenAICompatible:
             return "reasoning_effort"
         if self.max_tokens and not self._drop_max_tokens and "max_tokens" in message:
             return "max_tokens"
+        if (
+            self.temperature is not None
+            and not self._drop_temperature
+            and "temperature" in message
+        ):
+            return "temperature"
         return None
 
     def _chat_payload(
@@ -481,7 +514,7 @@ class Anthropic:
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": "image/jpeg",
+                            "media_type": _image_media_type(image),
                             "data": base64.b64encode(image).decode("ascii"),
                         },
                     }
@@ -606,6 +639,15 @@ def build_provider(settings: config.Settings, client: httpx.Client | None = None
     """Create the adapter for the active provider."""
     provider = config.resolved_provider(settings)
     key = config.resolve_key(provider.id) or ""
+    if provider.kind == "copilot":
+        from . import copilot as copilot_module
+
+        return copilot_module.CopilotProvider(
+            model=provider.model,
+            client=client,
+            max_tokens=settings.max_tokens,
+            reasoning_effort=settings.reasoning_effort,
+        )
     if provider.kind == "anthropic":
         return Anthropic(
             provider_id=provider.id,
