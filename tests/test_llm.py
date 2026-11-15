@@ -199,3 +199,15 @@ def test_anthropic_stream_error_is_reported_instead_of_an_empty_answer():
         list(provider.chat([llm.Message("user", "hi")]))
 
     assert "max_tokens too large" in str(error.value)
+
+
+def test_base_url_without_a_scheme_gets_one():
+    provider = llm.OpenAICompatible("custom", "127.0.0.1:8000/v1/", "", "local")
+
+    assert provider.base_url == "http://127.0.0.1:8000/v1"
+
+
+def test_a_local_endpoint_needs_no_api_key():
+    provider = llm.OpenAICompatible("custom", "http://localhost:8080/v1", "", "local")
+
+    assert "Authorization" not in provider._headers()

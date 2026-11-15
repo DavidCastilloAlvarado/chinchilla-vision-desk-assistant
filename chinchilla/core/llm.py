@@ -86,6 +86,14 @@ def _sse_events(lines: Iterable[str]) -> Iterator[dict]:
             continue
 
 
+def normalise_base_url(url: str) -> str:
+    """`192.168.1.5:1234/v1` is a common paste; httpx needs a scheme."""
+    cleaned = (url or "").strip().rstrip("/")
+    if cleaned and "://" not in cleaned:
+        cleaned = "http://" + cleaned
+    return cleaned
+
+
 def raise_for_status(provider_id: str, response: httpx.Response) -> None:
     """Turn an error response into a ProviderError, streaming or not.
 
@@ -126,6 +134,7 @@ class OpenAICompatible:
         temperature: float = 0.2,
         max_tokens: int = 1400,
     ) -> None:
+        base_url = normalise_base_url(base_url)
         if not base_url:
             raise ProviderError(f"{provider_id}: no base url configured")
         if not api_key and not config.is_local_endpoint(base_url):
@@ -133,7 +142,7 @@ class OpenAICompatible:
         if not model:
             raise ProviderError(f"{provider_id}: no model configured")
         self.id = provider_id
-        self.base_url = base_url.rstrip("/")
+        self.base_url = base_url
         self.api_key = api_key
         self.model = model
         self.temperature = temperature
@@ -312,12 +321,13 @@ class Anthropic:
         max_tokens: int = 1400,
         temperature: float = 0.2,
     ) -> None:
+        base_url = normalise_base_url(base_url)
         if not api_key:
             raise ProviderError("anthropic: no api key configured")
         if not model:
             raise ProviderError("anthropic: no model configured")
         self.id = provider_id
-        self.base_url = base_url.rstrip("/")
+        self.base_url = base_url
         self.api_key = api_key
         self.model = model
         self.max_tokens = max_tokens

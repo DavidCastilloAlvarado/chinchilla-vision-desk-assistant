@@ -220,6 +220,43 @@ def test_open_session_loads_the_stored_conversation(xdg):
     assert any(turn.text == "remember me" for turn in app.session.turns)
 
 
+def test_refresh_config_reads_the_file_again(xdg):
+    app, _provider = _app()
+    changed = config.load_settings()
+    changed.language = "Japanese"
+    config.save_settings(changed)
+
+    assert app.refresh_config() is True
+    assert app.settings.language == "Japanese"
+    assert app.refresh_config() is False, "a second read with no changes is a no-op"
+
+
+def test_provider_label_follows_the_environment_without_a_restart(xdg, monkeypatch):
+    app, _provider = _app()
+    app.settings.active_provider = "custom"
+    monkeypatch.setenv("LLM_BASE_URL", "http://127.0.0.1:9999/v1")
+    monkeypatch.setenv("LLM_MODEL", "exported-vl")
+    monkeypatch.setenv("LLM_API_KEY", "local")
+
+    app.refresh_config()
+
+    label = app.window.content.provider_label
+    assert "exported-vl" in label.get_text()
+    assert label.get_tooltip_text().startswith("http://127.0.0.1:9999/v1")
+
+
+def test_activation_reloads_the_config_before_capturing(xdg):
+    app, _provider = _app()
+    changed = config.load_settings()
+    changed.language = "Klingon"
+    config.save_settings(changed)
+
+    app.do_activate()  # the daemon path consumes the first activation
+
+    assert app.capture_on_activate is True
+    assert app.settings.language == "Klingon"
+
+
 def test_add_capture_appends_to_the_open_session(xdg):
     app, _provider = _app()
 

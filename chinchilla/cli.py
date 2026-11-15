@@ -104,6 +104,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     )
 
     if args.verbose:
+        origin = config.provider_origin(settings)
+        print(f"       endpoint: {provider.base_url or 'unset'} ({origin['base_url']})")
+        print(f"       model:    {provider.model or 'unset'} ({origin['model']})")
+        saved = settings.providers.get(settings.active_provider)
+        if saved is not None and origin["base_url"] != "settings file" and saved.base_url != provider.base_url:
+            print(f"       note: LLM_BASE_URL wins over the saved settings ({saved.base_url or 'unset'})")
         for line in capture.describe_backends():
             print(f"       {line}")
         _command, web_env = config.resolved_mcp(settings)

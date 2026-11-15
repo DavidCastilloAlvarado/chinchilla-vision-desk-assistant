@@ -132,6 +132,25 @@ LLM_API_KEY=...
 `.env` in the project root and `~/.config/chinchilla/.env` are both read; the
 real environment wins over both. `.env` is git-ignored — never commit keys.
 
+Rules that are easy to trip over:
+
+- For the `custom` provider, `LLM_BASE_URL` and `LLM_MODEL` from the
+  environment or `.env` **beat** whatever the settings dialog saved. Editing
+  `.env` is enough to move to another server; the dialog value is only used
+  when those two variables are absent. `chinchilla doctor --verbose` prints the
+  endpoint, the model and which one won:
+
+  ```
+  endpoint: http://192.168.0.10:1234/v1 (.env (LLM_BASE_URL))
+  model:    Qwen3.8_mtp-27B (.env (LLM_MODEL))
+  ```
+
+- `Ctrl+Alt+A` re-activates the same long-lived process, so the app re-reads
+  `settings.json`, `.env` and the environment every time the panel opens.
+  **No restart, no logout**: edit the file, press the hotkey. The header shows
+  the live model and the endpoint behind its tooltip, so you can see which
+  server you are actually talking to.
+
 #### Local models (vLLM, llama.cpp, Ollama)
 
 They all serve the OpenAI chat completions API, so use the `custom` provider.

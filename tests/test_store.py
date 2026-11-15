@@ -137,3 +137,53 @@ def test_session_json_is_readable(xdg):
     session.save()
     data = json.loads(session.path.read_text(encoding="utf-8"))
     assert data["turns"][0]["role"] == "user"
+
+
+def test_exported_endpoint_wins_over_the_saved_settings(xdg, monkeypatch):
+    settings = config.default_settings()
+    settings.active_provider = "custom"
+    settings.providers["custom"].base_url = "http://saved:1234/v1"
+    settings.providers["custom"].model = "saved-model"
+    monkeypatch.setenv("LLM_BASE_URL", "http://exported:8000/v1")
+    monkeypatch.setenv("LLM_MODEL", "exported-model")
+
+    resolved = config.resolved_provider(settings)
+
+    assert resolved.base_url == "http://exported:8000/v1"
+    assert resolved.model == "exported-model"
+    assert config.provider_origin(settings) == {
+        "base_url": "environment (LLM_BASE_URL)",
+        "model": "environment (LLM_MODEL)",
+    }
+
+
+def test_a_dotenv_value_also_wins_over_the_saved_settings(xdg, monkeypatch):
+    for name in ("LLM_BASE_URL", "LLM_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(
+        config,
+        "load_env",
+        lambda: {"LLM_BASE_URL": "http://from-dotenv:1/v1", "LLM_MODEL": "dotenv-model"},
+    )
+    settings = config.default_settings()
+    settings.active_provider = "custom"
+    settings.providers["custom"].base_url = "http://saved:1234/v1"
+
+    resolved = config.resolved_provider(settings)
+
+    assert resolved.base_url == "http://from-dotenv:1/v1"
+    assert config.provider_origin(settings)["base_url"] == ".env (LLM_BASE_URL)"
+
+
+def test_origin_falls_back_to_the_settings_file(xdg, monkeypatch):
+    for name in ("LLM_BASE_URL", "LLM_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(config, "load_env", lambda: {})
+    settings = config.default_settings()
+    settings.active_provider = "custom"
+    settings.providers["custom"].base_url = "http://saved:1234/v1"
+
+    assert config.provider_origin(settings) == {
+        "base_url": "settings file",
+        "model": "settings file",
+    }

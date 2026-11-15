@@ -357,6 +357,28 @@ def is_local_endpoint(url: str) -> bool:
     return bool(host) and (host in LOCAL_HOSTS or host.startswith("127."))
 
 
+def env_source(name: str) -> str:
+    """Where a variable comes from: 'environment', '.env' or '' when unset."""
+    if os.environ.get(name):
+        return "environment"
+    if load_env().get(name):
+        return ".env"
+    return ""
+
+
+def provider_origin(settings: "Settings") -> dict[str, str]:
+    """Explain the effective endpoint and model, for `doctor --verbose`."""
+    provider = settings.active()
+    origin = {"base_url": "settings file", "model": "settings file"}
+    if provider.id != "custom":
+        return {"base_url": "built in", "model": "settings file"}
+    if env_value("LLM_BASE_URL"):
+        origin["base_url"] = f"{env_source('LLM_BASE_URL')} (LLM_BASE_URL)"
+    if env_value("LLM_MODEL"):
+        origin["model"] = f"{env_source('LLM_MODEL')} (LLM_MODEL)"
+    return origin
+
+
 def provider_from_env(provider_id: str = "custom") -> ProviderSettings:
     """Custom provider details come from LLM_BASE_URL / LLM_MODEL.
 
@@ -411,15 +433,19 @@ def resolve_key(provider_id: str) -> str | None:
 
 
 def resolved_provider(settings: Settings) -> ProviderSettings:
-    """Active provider with the environment filling the custom endpoint."""
+    """Active provider, with the environment winning for a custom endpoint.
+
+    `LLM_BASE_URL` / `LLM_MODEL` (environment or .env) override whatever the
+    settings dialog saved, so editing `.env` is enough to move to another
+    server without touching the GUI.
+    """
     provider = settings.active()
     if provider.id != "custom":
         return provider
-    env = provider_from_env("custom")
     return ProviderSettings(
         id=provider.id,
-        base_url=provider.base_url or env.base_url,
-        model=provider.model or env.model,
+        base_url=env_value("LLM_BASE_URL") or provider.base_url,
+        model=env_value("LLM_MODEL") or provider.model,
         enabled=provider.enabled,
     )
 

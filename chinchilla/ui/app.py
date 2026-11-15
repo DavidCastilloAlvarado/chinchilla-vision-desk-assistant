@@ -67,6 +67,7 @@ class App(Gtk.Application):
         self._install_tray()
 
     def do_activate(self) -> None:
+        self.refresh_config()
         if not self.capture_on_activate:
             # the daemon starts without capturing, later activations do capture
             self.capture_on_activate = True
@@ -118,6 +119,35 @@ class App(Gtk.Application):
     def _make_agent(self) -> Agent:
         return self.agent_factory(self.session, self.settings)
 
+    def refresh_config(self) -> bool:
+        """Re-read settings and the environment before serving an activation.
+
+        Ctrl+Alt+A activates this same process again (`Gtk.Application` is a
+        single instance and the app holds it open), so a key or endpoint edited
+        on disk would otherwise only apply after a logout.
+        """
+        if self.settings_window is not None:
+            return False
+        fresh = config.load_settings()
+        changed = fresh.to_dict() != self.settings.to_dict()
+        if changed:
+            self.settings = fresh
+            LOGGER.info("settings reloaded from disk")
+        self.agent = None
+        self._sync_provider_label()
+        return changed
+
+    def _sync_provider_label(self) -> None:
+        """Show the live provider, its model and the endpoint behind the tooltip."""
+        if self.window is None:
+            return
+        label = self.window.content.provider_label
+        label.set_text(self.settings.provider_label())
+        provider = config.resolved_provider(self.settings)
+        label.set_tooltip_text(
+            f"{provider.base_url or 'no endpoint'} ({config.key_source(provider.id)})"
+        )
+
     def refresh_panel(self) -> None:
         if self.window is None:
             return
@@ -128,6 +158,7 @@ class App(Gtk.Application):
             provider_label=self.settings.provider_label(),
             web_enabled=self.session.web_enabled,
         )
+        self._sync_provider_label()
 
     def toggle_sessions(self) -> None:
         from .sessions import SessionsPopover
@@ -367,8 +398,7 @@ class App(Gtk.Application):
 
     def _apply_settings(self, settings: config.Settings) -> None:
         self.settings = settings
-        if self.window is not None:
-            self.window.content.provider_label.set_text(settings.provider_label())
+        self._sync_provider_label()
         self.agent = None
         self._status("settings saved")
 
