@@ -10,3 +10,7 @@ dist/
 
 # uv sometimes writes one; the documented install uses "uv pip install -e ."
 uv.lock
+
+# internal audit notes: never committed (kept outside the repository)
+docs/VERIFY.md
+docs/audit/

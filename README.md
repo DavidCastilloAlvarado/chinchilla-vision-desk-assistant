@@ -19,6 +19,8 @@ New here? Jump to [Installation](#installation).
 
 Feature complete through the build order in [`docs/PLAN.md`](docs/PLAN.md).
 Design source of truth: [`docs/wireframes/wireframes.html`](docs/wireframes/wireframes.html).
+The verification notes are an internal audit and are kept out of the
+repository.
 
 ## Installation
 
