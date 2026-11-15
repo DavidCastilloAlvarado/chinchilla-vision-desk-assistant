@@ -78,6 +78,20 @@ button.icon-btn {{
   font-size: 12px;
 }}
 button.icon-btn:hover {{ background-color: #232a35; border-color: #2f3745; color: {TEXT}; }}
+button.icon-gear {{
+  min-width: 28px;
+  min-height: 28px;
+  font-size: 17px;
+  color: #aab4c6;
+}}
+button.icon-gear:hover {{ background-color: #232a35; border-color: #2f3745; color: #ffffff; }}
+button.icon-close {{
+  min-width: 30px;
+  min-height: 30px;
+  font-size: 22px;
+  color: {DANGER};
+}}
+button.icon-close:hover {{ background-color: #3a1d22; border-color: #6b2a2f; color: #ffa1a1; }}
 .thumb {{ border: 1px solid #333c4b; border-radius: 4px; }}
 .thumb-behind {{ background-color: #1e2632; border: 1px solid #2f3846; border-radius: 5px; }}
 label.thumb-count {{

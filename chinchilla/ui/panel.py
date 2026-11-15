@@ -263,8 +263,10 @@ class PanelContent(Gtk.Box):
         header.pack_start(titles, True, True, 0)
 
         self.settings_button = self._icon_button("\u2699", "Settings", self.on_settings)
+        self.settings_button.get_style_context().add_class("icon-gear")
         header.pack_end(self.settings_button, False, False, 0)
         self.close_button = self._icon_button("\u00d7", "Hide (Esc)", self.on_close)
+        self.close_button.get_style_context().add_class("icon-close")
         header.pack_end(self.close_button, False, False, 0)
 
         self.pack_start(header, False, False, 0)

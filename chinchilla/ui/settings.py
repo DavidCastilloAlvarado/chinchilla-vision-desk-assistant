@@ -549,6 +549,7 @@ class SettingsWindow(Gtk.Window):
         close = Gtk.Button(label="\u00d7")
         close.set_relief(Gtk.ReliefStyle.NONE)
         close.get_style_context().add_class("icon-btn")
+        close.get_style_context().add_class("icon-close")
         close.set_tooltip_text("Close (Esc)")
         close.connect("clicked", lambda *_: self.close())
         self.content.head_tools.pack_start(close, False, False, 0)

@@ -306,3 +306,12 @@ def test_the_link_handler_ignores_anything_but_http():
 
     assert label.emit("activate-link", "file:///etc/passwd") is True
     assert label.emit("activate-link", "javascript:alert(1)") is True
+
+
+def test_the_header_buttons_carry_their_own_size_and_colour():
+    from chinchilla.ui.panel import PanelContent
+
+    content = PanelContent()
+
+    assert content.close_button.get_style_context().has_class("icon-close")
+    assert content.settings_button.get_style_context().has_class("icon-gear")
