@@ -34,6 +34,19 @@ window.chinchilla-panel {{ background-color: {SURFACE}; }}
 }}
 .panel-root {{ background-color: {SURFACE}; }}
 
+/* ------------------------------------------------------------- scrollbars */
+scrollbar {{ background-color: transparent; border: none; }}
+scrollbar trough {{ background-color: transparent; border: none; }}
+scrollbar slider {{
+  background-color: #3c4557;
+  border: none;
+  border-radius: 3px;
+  min-width: 5px;
+  min-height: 24px;
+}}
+scrollbar slider:hover {{ background-color: #4b5568; }}
+scrollbar button {{ min-width: 0; min-height: 0; padding: 0; background: none; border: none; }}
+
 /* ------------------------------------------------------------------ header */
 .panel-head {{
   background-color: {SURFACE_ALT};
@@ -66,6 +79,7 @@ button.icon-btn {{
 }}
 button.icon-btn:hover {{ background-color: #232a35; border-color: #2f3745; color: {TEXT}; }}
 .thumb {{ border: 1px solid #333c4b; border-radius: 4px; }}
+.thumb-behind {{ background-color: #1e2632; border: 1px solid #2f3846; border-radius: 5px; }}
 label.thumb-count {{
   background-color: #2b3f6b;
   border: 1px solid #3f5b93;
@@ -146,10 +160,26 @@ label.sources-head {{ font-size: 9px; font-weight: 600; color: {TEXT_DIM}; }}
 label.source-label {{ font-size: 10.5px; color: #9aa9c2; }}
 
 /* ---------------------------------------------------------------- composer */
-.ask {{ background-color: #12161d; border: 1px solid {BORDER_SOFT}; border-radius: 8px; }}
-.ask-focus {{ border-color: #3a4354; }}
-textview.ask-input {{ background-color: transparent; color: #dfe5f0; font-size: 11.5px; }}
-textview.ask-input text {{ background-color: transparent; color: #dfe5f0; }}
+.ask {{
+  background-color: #12161d;
+  border: 1px solid {BORDER_SOFT};
+  border-radius: 8px;
+  padding: 0 5px 0 10px;
+}}
+.ask.filled {{ background-color: #161b24; border-color: #3a4354; }}
+.ask.ask-focus {{ border-color: #4c6ea8; }}
+entry.ask-entry {{
+  background-image: none;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  color: #dfe5f0;
+  font-size: 11.5px;
+  padding: 0;
+  min-height: 20px;
+}}
+entry.ask-entry:focus {{ background-color: transparent; border: none; }}
+entry.ask-entry placeholder {{ color: #6f7a8e; }}
 button.send-btn {{
   background-image: none;
   background-color: {ACCENT_HEX};

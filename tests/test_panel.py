@@ -31,7 +31,7 @@ def test_quick_action_pill_reports_its_id():
 def test_send_button_passes_the_composer_text():
     sent = []
     content = PanelContent(on_send=sent.append)
-    content.entry.get_buffer().set_text("  hello  ")
+    content.entry.set_text("  hello  ")
     content.send_button.clicked()
     assert sent == ["hello"]
     assert content.composer_text() == ""
@@ -189,3 +189,14 @@ def test_busy_panel_offers_stop_and_locks_the_actions():
 
     assert content.stop_button.get_visible() is False
     assert content.send_button.get_sensitive() is True
+
+
+def test_the_composer_is_a_frameless_entry_inside_the_ask_box():
+    from chinchilla.ui.panel import PanelContent
+
+    content = PanelContent()
+
+    assert content.entry.get_has_frame() is False
+    assert content.entry.get_placeholder_text().startswith("Ask anything")
+    assert content.entry.get_parent() is content.ask_box
+    assert content.ask_box.get_size_request() == (-1, 34)

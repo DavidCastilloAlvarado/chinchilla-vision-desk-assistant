@@ -16,7 +16,7 @@ from ..store import session as session_store
 from . import theme
 from .gtk import Gtk, Pango
 
-POPOVER_WIDTH = 320
+POPOVER_WIDTH = 312
 ROW_HEIGHT = 42
 
 
@@ -271,6 +271,9 @@ class SessionsPopover(Gtk.Popover):
         self._on_new = on_new
         self.pane = SessionsPane(self._pick, self._new, active_id)
         self.add(self.pane)
+        # The pane is built after the panel was shown, so nothing else would
+        # ever map it: without this the popover is an empty 76x52 sliver.
+        self.show_all()
 
     def _pick(self, session_id: str) -> None:
         self.popdown()

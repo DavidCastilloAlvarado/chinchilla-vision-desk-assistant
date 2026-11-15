@@ -196,11 +196,21 @@ class PanelContent(Gtk.Box):
         self.header = header
 
         self.thumb_stack = Gtk.Overlay()
-        self.thumb_stack.set_size_request(52, 34)
-        self.thumb_stack.set_valign(Gtk.Align.CENTER)
+        self.thumb_stack.set_size_request(58, 34)
+        self.thumb_stack.set_valign(Gtk.Align.START)
         self.thumb_stack.set_tooltip_text("Cuts in this session")
+        behind = Gtk.Box()
+        behind.get_style_context().add_class("thumb-behind")
+        behind.set_size_request(46, 32)
+        behind.set_halign(Gtk.Align.START)
+        behind.set_valign(Gtk.Align.START)
+        self.thumb_stack.add(behind)
         self._thumbs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
-        self.thumb_stack.add(self._thumbs)
+        self._thumbs.set_halign(Gtk.Align.START)
+        self._thumbs.set_valign(Gtk.Align.START)
+        self._thumbs.set_margin_start(10)
+        self._thumbs.set_margin_top(2)
+        self.thumb_stack.add_overlay(self._thumbs)
         self.thumb_count = Gtk.Label(label="")
         self.thumb_count.get_style_context().add_class("thumb-count")
         self.thumb_count.set_halign(Gtk.Align.END)
@@ -349,42 +359,20 @@ class PanelContent(Gtk.Box):
         box.set_margin_end(PADDING)
         box.set_margin_top(10)
 
-        self.ask_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.ask_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.ask_box.get_style_context().add_class("ask")
-        self.ask_box.set_margin_start(8)
-        self.ask_box.set_margin_end(5)
-        self.ask_box.set_margin_top(3)
-        self.ask_box.set_margin_bottom(3)
+        self.ask_box.set_size_request(-1, 34)
 
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_propagate_natural_height(True)
-        scroll.set_max_content_height(84)
-        scroll.set_min_content_height(18)
-        scroll.set_overlay_scrolling(True)
-        self.entry = Gtk.TextView()
-        self.entry.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self.entry.get_style_context().add_class("ask-input")
-        self.entry.set_left_margin(4)
-        self.entry.set_right_margin(4)
-        self.entry.connect("key-press-event", self._on_entry_key)
-        scroll.add(self.entry)
-
-        holder = Gtk.Overlay()
-        holder.add(scroll)
-        self.placeholder = Gtk.Label(label="Ask anything about this capture\u2026")
-        self.placeholder.get_style_context().add_class("ask-placeholder")
-        self.placeholder.set_halign(Gtk.Align.START)
-        self.placeholder.set_valign(Gtk.Align.CENTER)
-        self.placeholder.set_margin_start(8)
-        self.placeholder.set_no_show_all(True)
-        holder.add_overlay(self.placeholder)
-        self.ask_box.pack_start(holder, True, True, 0)
-
-        self.entry.connect("focus-in-event", lambda *_: self._sync_placeholder())
-        self.entry.connect("focus-out-event", lambda *_: self._sync_placeholder())
-        self.entry.get_buffer().connect("changed", lambda *_: self._sync_placeholder())
-        self.placeholder.set_visible(True)
+        self.entry = Gtk.Entry()
+        self.entry.set_has_frame(False)
+        self.entry.set_placeholder_text("Ask anything about this capture\u2026")
+        self.entry.get_style_context().add_class("ask-entry")
+        self.entry.set_valign(Gtk.Align.CENTER)
+        self.entry.connect("activate", lambda *_: self._submit())
+        self.entry.connect("changed", lambda *_: self._sync_ask_state())
+        self.entry.connect("focus-in-event", lambda *_: self._sync_ask_state())
+        self.entry.connect("focus-out-event", lambda *_: self._sync_ask_state())
+        self.ask_box.pack_start(self.entry, True, True, 0)
 
         self.send_button = Gtk.Button(label="\u21b5")
         self.send_button.set_relief(Gtk.ReliefStyle.NONE)
@@ -597,11 +585,10 @@ class PanelContent(Gtk.Box):
         self.web_switch.set_active(bool(enabled), notify=False)
 
     def composer_text(self) -> str:
-        buffer = self.entry.get_buffer()
-        return buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), False).strip()
+        return self.entry.get_text().strip()
 
     def clear_composer(self) -> None:
-        self.entry.get_buffer().set_text("")
+        self.entry.set_text("")
 
     def focus_composer(self) -> None:
         self.entry.grab_focus()
@@ -772,17 +759,17 @@ class PanelContent(Gtk.Box):
         if self.on_web is not None:
             self.on_web(active)
 
-    def _sync_placeholder(self) -> None:
-        visible = not self.composer_text() and not self.entry.has_focus()
-        self.placeholder.set_visible(visible)
-
-    def _on_entry_key(self, _widget, event) -> bool:
-        if event.keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
-            if event.state & Gdk.ModifierType.SHIFT_MASK:
-                return False
-            self._submit()
-            return True
-        return False
+    def _sync_ask_state(self) -> None:
+        """Highlight the box once it holds text or has the focus, like the wireframe."""
+        context = self.ask_box.get_style_context()
+        if self.composer_text():
+            context.add_class("filled")
+        else:
+            context.remove_class("filled")
+        if self.entry.has_focus():
+            context.add_class("ask-focus")
+        else:
+            context.remove_class("ask-focus")
 
     def _submit(self) -> None:
         if self._busy:

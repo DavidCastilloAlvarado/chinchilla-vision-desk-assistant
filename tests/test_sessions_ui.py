@@ -96,3 +96,32 @@ def test_sessions_render_writes_a_png(xdg, tmp_path):
     target = tmp_path / "sessions.png"
     assert main(["sessions", "list", "--render", str(target), "--demo"]) == 0
     assert target.is_file() and target.stat().st_size > 4000
+
+def test_the_popover_maps_its_rows_the_first_time_it_opens():
+    """Without show_all the popover is an empty 76x52 sliver."""
+    from chinchilla.ui.sessions import SessionsPopover, demo_sessions
+
+    popover = SessionsPopover(lambda _sid: None, lambda: None)
+    popover.pane.sessions = demo_sessions()
+    popover.pane._refill()
+    try:
+        popover.popup()
+        assert popover.pane.get_visible() is True
+        assert popover.pane.new_button.get_visible() is True
+        assert popover.pane.search.get_visible() is True
+        assert popover.pane.listbox.get_children()[0].get_visible() is True
+    finally:
+        popover.popdown()
+        popover.destroy()
+
+
+def test_the_selector_forwards_a_pick_instead_of_calling_itself():
+    picked = []
+    from chinchilla.ui.sessions import SessionsPopover, demo_sessions
+
+    popover = SessionsPopover(picked.append, lambda: None)
+    popover.pane.sessions = demo_sessions()
+    popover.pane._refill()
+    popover.pane.listbox.get_children()[0].get_child().clicked()
+
+    assert picked == [demo_sessions()[0].id]
