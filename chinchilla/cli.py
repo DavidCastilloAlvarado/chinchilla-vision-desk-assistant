@@ -108,8 +108,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"       endpoint: {provider.base_url or 'unset'} ({origin['base_url']})")
         print(f"       model:    {provider.model or 'unset'} ({origin['model']})")
         saved = settings.providers.get(settings.active_provider)
-        if saved is not None and origin["base_url"] != "settings file" and saved.base_url != provider.base_url:
-            print(f"       note: LLM_BASE_URL wins over the saved settings ({saved.base_url or 'unset'})")
+        if (
+            saved is not None
+            and settings.active_provider == "custom"
+            and origin["base_url"] != "settings file (saved in the dialog)"
+            and saved.base_url.rstrip("/") != provider.base_url.rstrip("/")
+        ):
+            print(
+                f"       note: the endpoint comes from LLM_BASE_URL, not the saved settings "
+                f"({saved.base_url or 'unset'}); save a different value in Settings to override it"
+            )
         for line in capture.describe_backends():
             print(f"       {line}")
         _command, web_env = config.resolved_mcp(settings)

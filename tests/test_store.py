@@ -187,3 +187,49 @@ def test_origin_falls_back_to_the_settings_file(xdg, monkeypatch):
         "base_url": "settings file",
         "model": "settings file",
     }
+
+
+def test_a_value_saved_in_the_dialog_wins_over_the_dotenv(xdg, monkeypatch):
+    monkeypatch.setattr(
+        config,
+        "load_env",
+        lambda: {"LLM_BASE_URL": "http://from-dotenv:1/v1", "LLM_MODEL": "dotenv-model"},
+    )
+    settings = config.default_settings()
+    settings.active_provider = "custom"
+    settings.providers["custom"].base_url = "http://typed-here:1234/v2"
+    settings.custom_explicit = ["base_url"]
+
+    resolved = config.resolved_provider(settings)
+
+    assert resolved.base_url == "http://typed-here:1234/v2"
+    assert resolved.model == "dotenv-model"
+    assert config.provider_origin(settings) == {
+        "base_url": "settings file (saved in the dialog)",
+        "model": ".env (LLM_MODEL)",
+    }
+
+
+def test_custom_explicit_round_trips_through_the_settings_file():
+    settings = config.default_settings()
+    settings.custom_explicit = ["base_url"]
+
+    loaded = config.Settings.from_dict(settings.to_dict())
+
+    assert loaded.custom_explicit == ["base_url"]
+
+
+def test_unknown_explicit_fields_are_dropped():
+    settings = config.Settings.from_dict({"custom_explicit": ["base_url", "nonsense"]})
+
+    assert settings.custom_explicit == ["base_url"]
+
+
+def test_effective_provider_resolves_a_provider_that_is_not_active(xdg, monkeypatch):
+    settings = config.default_settings()
+    settings.active_provider = "openai"
+    settings.providers["custom"].base_url = "http://settings:1/v1"
+    monkeypatch.setenv("LLM_BASE_URL", "http://exported:1/v1")
+
+    assert config.effective_provider(settings, "custom").base_url == "http://exported:1/v1"
+    assert config.effective_provider(settings, "openai").id == "openai"

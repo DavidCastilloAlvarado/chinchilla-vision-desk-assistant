@@ -91,3 +91,53 @@ def test_settings_render_writes_a_png(xdg, tmp_path):
     target = tmp_path / "settings.png"
     assert main(["settings", "--render", str(target), "--page", "1"]) == 0
     assert target.is_file() and target.stat().st_size > 4000
+
+def _dotenv(monkeypatch, base_url="http://from-dotenv:1/v1", model="dotenv-model"):
+    monkeypatch.setattr(
+        config, "load_env", lambda: {"LLM_BASE_URL": base_url, "LLM_MODEL": model}
+    )
+
+
+def test_custom_fields_show_the_dotenv_value(xdg, monkeypatch):
+    _dotenv(monkeypatch)
+    content = _content()
+    widgets = content.provider_widgets["custom"]
+
+    assert widgets["base_url"].get_text() == "http://from-dotenv:1/v1"
+    assert widgets["model"].get_text() == "dotenv-model"
+    assert widgets["base_url"].get_sensitive()
+    notes = content.origin_notes["custom"]
+    assert "LLM_BASE_URL" in notes["base_url"].get_text()
+
+
+def test_typing_a_different_endpoint_overrides_the_dotenv(xdg, monkeypatch):
+    _dotenv(monkeypatch)
+    content = _content()
+    content.provider_widgets["custom"]["base_url"].set_text("http://typed:1234/v2")
+
+    collected = content.collect()
+
+    assert collected.custom_explicit == ["base_url"]
+    assert config.resolved_provider(collected).base_url == "http://typed:1234/v2"
+    assert config.resolved_provider(collected).model == "dotenv-model"
+
+
+def test_keeping_the_dotenv_value_keeps_the_environment_as_source(xdg, monkeypatch):
+    _dotenv(monkeypatch)
+    content = _content()
+
+    collected = content.collect()
+
+    assert collected.custom_explicit == []
+    assert config.resolved_provider(collected).base_url == "http://from-dotenv:1/v1"
+
+
+def test_save_status_is_empty_until_the_user_saves(xdg, monkeypatch):
+    _dotenv(monkeypatch)
+    content = _content()
+
+    assert content.save_statuses[0].get_text() == ""
+
+    content.save()
+
+    assert content.save_statuses[0].get_text() == "saved to settings.json"

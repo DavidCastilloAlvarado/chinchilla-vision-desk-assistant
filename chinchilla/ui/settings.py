@@ -51,6 +51,48 @@ def _text_of(view: Gtk.TextView) -> str:
     return buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), False)
 
 
+def _key_status(provider_id: str) -> str:
+    source = config.key_source(provider_id)
+    if source.startswith("env:"):
+        return f"key: {source} - wins over the key saved here"
+    if source == "file":
+        return "key: saved here"
+    return "key: missing"
+
+
+def _origin_note(settings: config.Settings, provider_id: str, field: str) -> str:
+    """Say where the custom endpoint/model comes from, and how to change it."""
+    if provider_id != "custom":
+        return ""
+    name = config.CUSTOM_FIELDS[field]
+    env = config.env_value(name)
+    if not env:
+        return ""
+    if field in settings.custom_explicit:
+        return f"saved here; {name} from {config.env_source(name)} is ignored"
+    return f"value from {config.env_source(name)} ({name}); edit it and save to override"
+
+
+def _effective_entries(
+    settings: config.Settings, provider_id: str, base_url: Gtk.Entry, model: Gtk.Entry
+) -> dict[str, Gtk.Label]:
+    """Show the value that is really in use, plus a note per overridable field."""
+    if provider_id == "custom":
+        effective = config.effective_provider(settings, provider_id)
+        base_url.set_text((effective.base_url or "").rstrip("/"))
+        model.set_text(effective.model or "")
+    notes: dict[str, Gtk.Label] = {}
+    for field, entry in (("base_url", base_url), ("model", model)):
+        text = _origin_note(settings, provider_id, field)
+        if not text:
+            continue
+        label = _label(text, muted=True, wrap=True)
+        label.set_margin_start(24)
+        notes[field] = label
+        entry.set_tooltip_text(text)
+    return notes
+
+
 class SettingsContent(Gtk.Notebook):
     """The tabbed form, separate from the window so it can be rendered."""
 
@@ -60,6 +102,7 @@ class SettingsContent(Gtk.Notebook):
         self.settings = settings
         self.on_save = on_save
         self.set_size_request(560, 560)
+        self.save_statuses: list[Gtk.Label] = []
 
         self._build_general()
         self._build_actions()
@@ -179,6 +222,7 @@ class SettingsContent(Gtk.Notebook):
             0,
         )
         self.provider_widgets: dict[str, dict[str, Gtk.Widget]] = {}
+        self.origin_notes: dict[str, dict[str, Gtk.Label]] = {}
         group = None
         for provider in self.settings.providers.values():
             radio = Gtk.RadioButton.new_with_label_from_widget(
@@ -192,12 +236,10 @@ class SettingsContent(Gtk.Notebook):
             grid.set_margin_start(24)
             base_url = _entry(provider.base_url or "", width=320)
             model = _entry(provider.model, width=240)
-            if provider.id == "custom":
-                env_provider = config.provider_from_env("custom")
-                base_url.set_placeholder_text(env_provider.base_url or "https://host/v1")
-                model.set_placeholder_text(env_provider.model or "model name")
+            notes = _effective_entries(self.settings, provider.id, base_url, model)
+            self.origin_notes[provider.id] = notes
             key_entry = _entry("", password=True, width=320)
-            status = _label(f"key: {config.key_source(provider.id)}", muted=True)
+            status = _label(_key_status(provider.id), muted=True, wrap=True)
             save_key = Gtk.Button(label="Save key")
             save_key.get_style_context().add_class("ghost-button")
             save_key.connect("clicked", self._on_save_key, provider.id, key_entry, status)
@@ -211,6 +253,9 @@ class SettingsContent(Gtk.Notebook):
             grid.attach(save_key, 2, 2, 1, 1)
             grid.attach(status, 1, 3, 2, 1)
             page.pack_start(grid, False, False, 0)
+            for field in ("base_url", "model"):
+                if field in notes:
+                    page.pack_start(notes[field], False, False, 0)
 
             self.provider_widgets[provider.id] = {
                 "radio": radio,
@@ -287,7 +332,8 @@ class SettingsContent(Gtk.Notebook):
     def _save_row(self) -> Gtk.Box:
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         row.set_margin_top(10)
-        row.pack_end(_label("Saved to settings.json", muted=True), False, False, 0)
+        self.save_statuses.append(_label("", muted=True))
+        row.pack_end(self.save_statuses[-1], False, False, 0)
         save = Gtk.Button(label="Save")
         save.get_style_context().add_class("accent-button")
         save.connect("clicked", lambda *_: self.save())
@@ -334,6 +380,25 @@ class SettingsContent(Gtk.Notebook):
 
     # ------------------------------------------------------------------- save
 
+    def _record_custom_sources(
+        self, settings: config.Settings, provider: config.ProviderSettings
+    ) -> None:
+        """A value typed over the one in .env wins from now on; matching it does not."""
+        explicit = set(settings.custom_explicit)
+        for field, name in config.CUSTOM_FIELDS.items():
+            env = config.env_value(name)
+            value = getattr(provider, field) or ""
+            if env and value and value.rstrip("/") != env.rstrip("/"):
+                explicit.add(field)
+            else:
+                explicit.discard(field)
+        settings.custom_explicit = [field for field in config.CUSTOM_FIELDS if field in explicit]
+
+    def _refresh_origin_notes(self) -> None:
+        for provider_id, notes in self.origin_notes.items():
+            for field, label in notes.items():
+                label.set_text(_origin_note(self.settings, provider_id, field))
+
     def collect(self) -> config.Settings:
         settings = self.settings
         settings.language = self.language_entry.get_text().strip() or config.DEFAULT_LANGUAGE
@@ -352,8 +417,10 @@ class SettingsContent(Gtk.Notebook):
 
         for provider_id, widgets in self.provider_widgets.items():
             provider = settings.providers[provider_id]
-            provider.base_url = widgets["base_url"].get_text().strip()
+            provider.base_url = widgets["base_url"].get_text().strip().rstrip("/")
             provider.model = widgets["model"].get_text().strip()
+            if provider_id == "custom":
+                self._record_custom_sources(settings, provider)
             if widgets["radio"].get_active():
                 settings.active_provider = provider_id
 
@@ -369,7 +436,10 @@ class SettingsContent(Gtk.Notebook):
 
     def save(self) -> config.Settings:
         settings = self.collect()
-        config.save_settings(settings)
+        target = config.save_settings(settings)
+        self._refresh_origin_notes()
+        for label in self.save_statuses:
+            label.set_text(f"saved to {target.name}")
         if self.on_save is not None:
             self.on_save(settings)
         return settings

@@ -135,15 +135,22 @@ real environment wins over both. `.env` is git-ignored — never commit keys.
 Rules that are easy to trip over:
 
 - For the `custom` provider, `LLM_BASE_URL` and `LLM_MODEL` from the
-  environment or `.env` **beat** whatever the settings dialog saved. Editing
-  `.env` is enough to move to another server; the dialog value is only used
-  when those two variables are absent. `chinchilla doctor --verbose` prints the
-  endpoint, the model and which one won:
+  environment or `.env` are the source until you save a different value in the
+  settings dialog. The dialog shows the value that is really in use and says
+  where it comes from: type another endpoint, press **Save**, and that value
+  wins from then on (recorded in `settings.json` as `custom_explicit`). Type the
+  environment value back, or clear the field, and `.env` takes over again.
+  `chinchilla doctor --verbose` prints the endpoint, the model and which one
+  won:
 
   ```
   endpoint: http://192.168.0.10:1234/v1 (.env (LLM_BASE_URL))
   model:    Qwen3.8_mtp-27B (.env (LLM_MODEL))
   ```
+
+  After saving a value in the dialog the origin reads
+  `settings file (saved in the dialog)` and `.env` no longer applies to that
+  field.
 
 - `Ctrl+Alt+A` re-activates the same long-lived process, so the app re-reads
   `settings.json`, `.env` and the environment every time the panel opens.

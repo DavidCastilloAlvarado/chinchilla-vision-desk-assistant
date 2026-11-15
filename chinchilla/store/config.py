@@ -45,6 +45,8 @@ PROVIDERS: dict[str, dict[str, str]] = {
     },
 }
 
+CUSTOM_FIELDS = {"base_url": "LLM_BASE_URL", "model": "LLM_MODEL"}
+
 MCP_PACKAGE = "dsh-google-chrome-search"
 DEFAULT_CHROME = "/usr/bin/google-chrome"
 DEFAULT_PROFILE_DIR = "~/.dsh-chrome-google"
@@ -173,6 +175,9 @@ class Settings:
     mcp_command: list[str] = field(default_factory=default_mcp_command)
     mcp_enabled: bool = True
     mcp_env: dict[str, str] = field(default_factory=default_mcp_env)
+    # custom-provider fields the user saved in the dialog, which then win over
+    # LLM_BASE_URL / LLM_MODEL. Empty means the environment decides.
+    custom_explicit: list[str] = field(default_factory=list)
 
     # -------------------------------------------------------------- providers
 
@@ -209,6 +214,7 @@ class Settings:
             "mcp_command": list(self.mcp_command),
             "mcp_enabled": self.mcp_enabled,
             "mcp_env": dict(self.mcp_env),
+            "custom_explicit": list(self.custom_explicit),
         }
 
     @classmethod
@@ -257,6 +263,8 @@ class Settings:
             settings.mcp_command = [str(part) for part in data["mcp_command"]]
         if isinstance(data.get("mcp_env"), dict):
             settings.mcp_env = {str(key): str(value) for key, value in data["mcp_env"].items()}
+        explicit = data.get("custom_explicit") or []
+        settings.custom_explicit = [str(name) for name in explicit if name in CUSTOM_FIELDS]
         return settings
 
 
@@ -369,13 +377,15 @@ def env_source(name: str) -> str:
 def provider_origin(settings: "Settings") -> dict[str, str]:
     """Explain the effective endpoint and model, for `doctor --verbose`."""
     provider = settings.active()
-    origin = {"base_url": "settings file", "model": "settings file"}
     if provider.id != "custom":
         return {"base_url": "built in", "model": "settings file"}
-    if env_value("LLM_BASE_URL"):
-        origin["base_url"] = f"{env_source('LLM_BASE_URL')} (LLM_BASE_URL)"
-    if env_value("LLM_MODEL"):
-        origin["model"] = f"{env_source('LLM_MODEL')} (LLM_MODEL)"
+    origin = {"base_url": "settings file", "model": "settings file"}
+    explicit = set(settings.custom_explicit)
+    for field, name in CUSTOM_FIELDS.items():
+        if field in explicit and getattr(provider, field):
+            origin[field] = "settings file (saved in the dialog)"
+        elif env_value(name):
+            origin[field] = f"{env_source(name)} ({name})"
     return origin
 
 
@@ -433,19 +443,33 @@ def resolve_key(provider_id: str) -> str | None:
 
 
 def resolved_provider(settings: Settings) -> ProviderSettings:
-    """Active provider, with the environment winning for a custom endpoint.
+    """Active provider, resolving who wins for a custom endpoint.
 
-    `LLM_BASE_URL` / `LLM_MODEL` (environment or .env) override whatever the
-    settings dialog saved, so editing `.env` is enough to move to another
-    server without touching the GUI.
+    `LLM_BASE_URL` / `LLM_MODEL` (environment or .env) are the default source,
+    so editing `.env` moves to another server without touching the GUI. A value
+    typed into the settings dialog and saved is recorded in
+    `Settings.custom_explicit` and wins for that field until it is cleared or
+    reset to the environment value there.
     """
-    provider = settings.active()
+    return effective_provider(settings, settings.active_provider)
+
+
+def effective_provider(settings: Settings, provider_id: str) -> ProviderSettings:
+    """Resolve one provider, whether or not it is the active one."""
+    provider = settings.providers.get(provider_id) or default_provider(provider_id)
     if provider.id != "custom":
         return provider
+    explicit = set(settings.custom_explicit)
+    base_url = provider.base_url
+    model = provider.model
+    if "base_url" not in explicit or not base_url:
+        base_url = env_value("LLM_BASE_URL") or base_url
+    if "model" not in explicit or not model:
+        model = env_value("LLM_MODEL") or model
     return ProviderSettings(
         id=provider.id,
-        base_url=env_value("LLM_BASE_URL") or provider.base_url,
-        model=env_value("LLM_MODEL") or provider.model,
+        base_url=base_url,
+        model=model,
         enabled=provider.enabled,
     )
 
