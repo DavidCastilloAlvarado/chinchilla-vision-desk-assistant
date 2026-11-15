@@ -9,6 +9,7 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .. import paths
 from ..core.prompts import DEFAULT_ACTIONS
@@ -347,13 +348,25 @@ def load_env() -> dict[str, str]:
     return merged
 
 
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0", "host.docker.internal"}
+
+
+def is_local_endpoint(url: str) -> bool:
+    """True for a model server on this machine, which accepts requests without a key."""
+    host = (urlparse(url).hostname or "").lower()
+    return bool(host) and (host in LOCAL_HOSTS or host.startswith("127."))
+
+
 def provider_from_env(provider_id: str = "custom") -> ProviderSettings:
-    """Custom provider details come from LLM_BASE_URL / LLM_MODEL."""
-    env = load_env()
+    """Custom provider details come from LLM_BASE_URL / LLM_MODEL.
+
+    The real environment wins over the .env files, like every other setting, so
+    `export LLM_BASE_URL=http://localhost:8000/v1` works for a local server.
+    """
     provider = default_provider(provider_id)
     if provider_id == "custom":
-        provider.base_url = env.get("LLM_BASE_URL", provider.base_url)
-        provider.model = env.get("LLM_MODEL", provider.model)
+        provider.base_url = env_value("LLM_BASE_URL") or provider.base_url
+        provider.model = env_value("LLM_MODEL") or provider.model
     return provider
 
 

@@ -132,6 +132,48 @@ LLM_API_KEY=...
 `.env` in the project root and `~/.config/chinchilla/.env` are both read; the
 real environment wins over both. `.env` is git-ignored — never commit keys.
 
+#### Local models (vLLM, llama.cpp, Ollama)
+
+They all serve the OpenAI chat completions API, so use the `custom` provider.
+A server on this machine needs **no key**: `localhost`, `127.0.0.1`, `::1`,
+`0.0.0.0` and `host.docker.internal` are recognised as local and the
+`Authorization` header is simply left out. Any other host still needs a key.
+
+```bash
+# a vision model behind vLLM, with tool calling enabled for the Web toggle
+vllm serve Qwen/Qwen2.5-VL-7B-Instruct \
+  --max-model-len 16384 \
+  --enable-auto-tool-choice --tool-call-parser hermes
+
+# point Chinchilla at it (exported, or the same lines in .env)
+export LLM_BASE_URL=http://127.0.0.1:8000/v1
+export LLM_MODEL=Qwen/Qwen2.5-VL-7B-Instruct
+chinchilla doctor                # provider: custom model=... key=not needed by a local server
+```
+
+| Server | `LLM_BASE_URL` | `LLM_MODEL` |
+| --- | --- | --- |
+| vLLM | `http://127.0.0.1:8000/v1` | the `--served-model-name`, or the HF id |
+| llama.cpp (`--api-key` not set) | `http://127.0.0.1:8080/v1` | anything, e.g. `local` |
+| Ollama | `http://127.0.0.1:11434/v1` | e.g. `qwen2.5vl:7b`, `llava` |
+
+What to expect:
+
+- **Images** are sent as `image_url` data URIs, so the model has to be a VLM.
+- **The Web toggle** adds `tools` + `tool_choice: "auto"`. vLLM rejects that
+  with `"auto" tool choice requires --enable-auto-tool-choice and
+  --tool-call-parser to be set` unless it was started with those flags; keep Web
+  off and the request carries no `tools` field at all.
+- **Context** is the whole conversation replayed every turn (see
+  [Context and token cost](#context-and-token-cost)), so a small
+  `--max-model-len` (4096) overflows after a few turns with a cut attached. Use
+  16k+ and start a new session for long threads.
+- **Thinking models** (R1 distills, QwQ) stream to `reasoning_content`, which
+  the panel does not render yet: the reply appears once the model stops
+  thinking.
+- **Prefix cache** hits are reported by vLLM, so the `cache N%` line under the
+  composer works locally too.
+
 ### 5. Web search
 
 The agent can look things up while answering. Searches run through

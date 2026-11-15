@@ -60,11 +60,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     settings = config.load_settings()
     provider = config.resolved_provider(settings)
     source = config.key_source(provider.id)
+    local = config.is_local_endpoint(provider.base_url)
+    if source == "missing" and local:
+        source = "not needed by a local server"
     results.append(
         _check(
             "provider",
             f"{provider.id} model={provider.model or 'unset'} key={source}",
-            bool(provider.model) and source != "missing",
+            bool(provider.model) and (source != "missing" or local),
         )
     )
 

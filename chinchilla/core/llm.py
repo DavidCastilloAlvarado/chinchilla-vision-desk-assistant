@@ -86,6 +86,35 @@ def _sse_events(lines: Iterable[str]) -> Iterator[dict]:
             continue
 
 
+def raise_for_status(provider_id: str, response: httpx.Response) -> None:
+    """Turn an error response into a ProviderError, streaming or not.
+
+    A streamed response has no body until it is read, so `response.text` raises
+    `ResponseNotRead`; that used to escape as an unhandled exception and hide
+    the server's own message (rate limits, context overflow, a vLLM 400).
+    """
+    if response.status_code < 400:
+        return
+    detail = ""
+    try:
+        raw = response.read() or b""
+    except Exception:
+        raw = b""
+    try:
+        body = json.loads(raw or b"{}")
+    except Exception:
+        body = None
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict):
+            detail = error.get("message") or ""
+        if not detail:
+            detail = body.get("message") or ""
+    if not detail:
+        detail = raw.decode("utf-8", "replace")[:200]
+    raise ProviderError(f"{provider_id}: HTTP {response.status_code} {detail}".strip())
+
+
 class OpenAICompatible:
     def __init__(
         self,
@@ -99,7 +128,7 @@ class OpenAICompatible:
     ) -> None:
         if not base_url:
             raise ProviderError(f"{provider_id}: no base url configured")
-        if not api_key:
+        if not api_key and not config.is_local_endpoint(base_url):
             raise ProviderError(f"{provider_id}: no api key configured")
         if not model:
             raise ProviderError(f"{provider_id}: no model configured")
@@ -115,10 +144,9 @@ class OpenAICompatible:
     # ------------------------------------------------------------- requests
 
     def _headers(self) -> dict[str, str]:
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         if self.id == "openrouter":
             headers["HTTP-Referer"] = "https://github.com/chinchilla"
             headers["X-Title"] = "Chinchilla"
@@ -257,19 +285,7 @@ class OpenAICompatible:
         )
 
     def _raise_for_status(self, response: httpx.Response) -> None:
-        if response.status_code < 400:
-            return
-        detail = ""
-        try:
-            body = response.json()
-            detail = (
-                (body.get("error") or {}).get("message")
-                or body.get("message")
-                or json.dumps(body)[:200]
-            )
-        except Exception:
-            detail = (response.text or "")[:200]
-        raise ProviderError(f"{self.id}: HTTP {response.status_code} {detail}".strip())
+        raise_for_status(self.id, response)
 
 
 class _StreamContext:
@@ -404,6 +420,7 @@ class Anthropic:
         url = f"{self.base_url}/v1/messages"
         if not stream:
             response = self._post(url, payload, stream=False)
+            raise_for_status(self.id, response)
             data = response.json()
             for block in data.get("content") or []:
                 if block.get("type") == "text":
@@ -420,6 +437,7 @@ class Anthropic:
 
         pending: dict[str, dict[str, Any]] = {}
         with self._post(url, payload, stream=True) as response:
+            raise_for_status(self.id, response)
             for event in _sse_events(response.iter_lines()):
                 kind = event.get("type")
                 if kind == "content_block_start":

@@ -175,3 +175,27 @@ def test_anthropic_usage_becomes_cached_input_tokens():
     )
 
     assert (usage.input_tokens, usage.cached_tokens) == (960, 900)
+
+
+def test_streamed_error_body_is_read_despite_not_being_read_yet():
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={"error": {"message": "rate limited, retry in 3s"}})
+
+    provider = llm.OpenAICompatible("custom", "https://api.test/v1", "sk-x", "m", client=make_client(handler))
+
+    with pytest.raises(llm.ProviderError) as error:
+        list(provider.chat([llm.Message("user", "hi")]))
+
+    assert "429" in str(error.value) and "rate limited" in str(error.value)
+
+
+def test_anthropic_stream_error_is_reported_instead_of_an_empty_answer():
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"type": "error", "error": {"message": "max_tokens too large"}})
+
+    provider = llm.Anthropic("anthropic", "https://api.test", "sk-ant", "claude-test", client=make_client(handler))
+
+    with pytest.raises(llm.ProviderError) as error:
+        list(provider.chat([llm.Message("user", "hi")]))
+
+    assert "max_tokens too large" in str(error.value)
