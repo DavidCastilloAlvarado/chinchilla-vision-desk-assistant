@@ -8,6 +8,7 @@ from ..core import search
 from ..store import config
 from . import theme
 from .gtk import Gtk
+from .widgets import place_knob
 
 def _label(text: str, muted: bool = False, wrap: bool = False) -> Gtk.Label:
     label = Gtk.Label(label=text)
@@ -122,7 +123,6 @@ class ToggleSwitch(Gtk.Button):
         self._knob = Gtk.Box()
         self._knob.get_style_context().add_class("set-switch-knob")
         self._knob.set_size_request(13, 13)
-        self._track.pack_start(self._knob, False, False, 0)
         self.add(self._track)
         self.connect("clicked", lambda *_: self.set_active(not self._active))
         self._render()
@@ -133,7 +133,7 @@ class ToggleSwitch(Gtk.Button):
             context.add_class("on")
         else:
             context.remove_class("on")
-        self._knob.set_halign(Gtk.Align.END if self._active else Gtk.Align.START)
+        place_knob(self._track, self._knob, self._active)
 
     def get_active(self) -> bool:
         return self._active

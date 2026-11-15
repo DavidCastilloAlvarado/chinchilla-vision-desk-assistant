@@ -17,6 +17,7 @@ from typing import Callable
 from ..core.thread import Capture, Source, Turn, Usage
 from . import theme
 from .gtk import Gdk, GdkPixbuf, GLib, Gtk, Pango
+from .widgets import place_knob
 
 PANEL_WIDTH = 404
 PADDING = 12
@@ -110,7 +111,6 @@ class WebChip(Gtk.Button):
         self._track.set_valign(Gtk.Align.CENTER)
         self._knob = Gtk.Box()
         self._knob.get_style_context().add_class("tool-knob")
-        self._track.pack_start(self._knob, True, False, 0)
         row.pack_start(self._track, False, False, 0)
         row.pack_start(Gtk.Label(label="Web search"), False, False, 0)
         self.add(row)
@@ -125,7 +125,7 @@ class WebChip(Gtk.Button):
         else:
             context.remove_class("on")
             self._track.get_style_context().remove_class("on")
-        self._knob.set_halign(Gtk.Align.END if self._active else Gtk.Align.START)
+        place_knob(self._track, self._knob, self._active)
 
     def get_active(self) -> bool:
         return self._active
@@ -427,7 +427,7 @@ class PanelContent(Gtk.Box):
         self.retry_button.set_relief(Gtk.ReliefStyle.NONE)
         self.retry_button.get_style_context().add_class("foot-btn")
         self.retry_button.get_style_context().add_class("primary")
-        self.retry_button.set_tooltip_text("Ask the last question again (Ctrl+Enter)")
+        self.retry_button.set_tooltip_text("Regenerate the last answer (Ctrl+Enter)")
         self.retry_button.connect("clicked", lambda *_: self._emit(self.on_retry))
         # packed right to left: Retry, then Copy, then Stop
         foot.pack_end(self.retry_button, False, False, 0)

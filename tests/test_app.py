@@ -444,10 +444,29 @@ def test_retry_asks_the_last_question_again(xdg):
     app.submit("explain the diagram")
     _drain(app)
     turns_before = len(app.session.turns)
+    answer_before = app.session.turns[-1].text
 
     app.retry_last()
     _drain(app)
 
     assert len(provider.seen) == 2
-    assert len(app.session.turns) == turns_before + 2
+    # The question is reused and only the answer is regenerated.
+    assert [turn.role for turn in app.session.turns] == ["user", "assistant"]
+    assert len(app.session.turns) == turns_before
     assert app.window.content.active_action is None
+    assert app.session.turns[-1].text == answer_before
+
+
+def test_retry_keeps_a_single_question_when_the_answer_stopped(xdg):
+    app, provider = _app()
+    _seed_capture(app)
+    app.submit("keep this question")
+    _drain(app)
+    app.retry_last()
+    _drain(app)
+    app.retry_last()
+    _drain(app)
+
+    questions = [turn.text for turn in app.session.turns if turn.role == "user"]
+    assert questions == ["keep this question"]
+    assert len(provider.seen) == 3

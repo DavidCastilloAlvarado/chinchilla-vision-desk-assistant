@@ -141,3 +141,29 @@ def test_save_status_is_empty_until_the_user_saves(xdg, monkeypatch):
     content.save()
 
     assert content.save_statuses[0].get_text() == "saved to settings.json"
+
+
+def test_toggle_switch_slides_its_knob_with_the_state():
+    from chinchilla.ui.gtk import Gtk
+    from chinchilla.ui.settings import ToggleSwitch
+
+    switch = ToggleSwitch(active=False)
+    assert switch._track.query_child_packing(switch._knob).pack_type == Gtk.PackType.START
+
+    switch.set_active(True)
+
+    assert switch._track.query_child_packing(switch._knob).pack_type == Gtk.PackType.END
+    assert switch._knob.get_parent() is switch._track
+
+    switch.set_active(False)
+
+    assert switch._track.query_child_packing(switch._knob).pack_type == Gtk.PackType.START
+
+
+def test_settings_toggles_start_in_the_state_they_were_built_with():
+    from chinchilla.ui.settings import ToggleSwitch
+
+    switch = ToggleSwitch(active=True)
+
+    assert switch.get_active() is True
+    assert switch._track.get_style_context().has_class("on")

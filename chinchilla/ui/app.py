@@ -294,11 +294,15 @@ class App(Gtk.Application):
         if action_id and self.session.title == session_store.DEFAULT_TITLE:
             action = self.settings.action(action_id)
             self.session.title = action.title if action is not None else self.session.title
+        self.window.content.add_turn(turn)
+        self._start_stream(turn)
+
+    def _start_stream(self, turn: Turn) -> None:
+        """Run the agent for a turn that is already part of the session."""
         self.busy = True
         content = self.window.content
-        content.add_turn(turn)
-        content.set_active_action(action_id)
-        content.start_assistant_turn(action_id)
+        content.set_active_action(turn.action)
+        content.start_assistant_turn(turn.action)
         content.set_busy(True)
         self._status("thinking")
 
@@ -330,16 +334,24 @@ class App(Gtk.Application):
         self._finish_turn("stopped")
 
     def retry_last(self) -> None:
-        """Ask the last question again, without needing a fresh cut."""
+        """Regenerate the last answer; the question is not sent twice."""
         if self.busy:
             return
-        last = next(
+        ask = next(
             (turn for turn in reversed(self.session.turns) if turn.role == "user"), None
         )
-        if last is None or not last.text:
+        if ask is None or not ask.text:
             self._status("nothing to retry", "error")
             return
-        self.submit(last.text, None)
+        index = next(
+            i
+            for i in range(len(self.session.turns) - 1, -1, -1)
+            if self.session.turns[i] is ask
+        )
+        del self.session.turns[index + 1 :]
+        self.session.save()
+        self.refresh_panel()
+        self._start_stream(ask)
 
     def _pump(self) -> bool:
         finished = False

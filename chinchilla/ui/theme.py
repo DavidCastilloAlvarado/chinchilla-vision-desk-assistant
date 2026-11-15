@@ -104,6 +104,14 @@ button.tool {{
 }}
 button.tool:hover {{ border-color: #3a4354; color: #dfe5f0; }}
 button.tool.on {{ background-color: #1a2333; border-color: #2b3f6b; color: #dbe6ff; }}
+/* Adwaita paints an orange keyboard ring on the last clicked button; the
+   selected state of these chips already says where the focus is. */
+button.tool:focus, button.act:focus, button.foot-btn:focus, button.set-tab:focus, button.set-switch:focus {{
+  outline: none;
+  box-shadow: none;
+}}
+button.tool:focus {{ border-color: #2b3f6b; }}
+button.act:focus {{ border-color: #2b3f6b; }}
 label.tool-key {{ color: #7b8497; font-size: 9px; }}
 .tool-switch {{ border-radius: 999px; background-color: #3a4254; min-width: 20px; min-height: 11px; }}
 .tool-switch.on {{ background-color: {TRANSLATE}; }}

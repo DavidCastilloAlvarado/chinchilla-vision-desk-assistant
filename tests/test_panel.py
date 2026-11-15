@@ -200,3 +200,36 @@ def test_the_composer_is_a_frameless_entry_inside_the_ask_box():
     assert content.entry.get_placeholder_text().startswith("Ask anything")
     assert content.entry.get_parent() is content.ask_box
     assert content.ask_box.get_size_request() == (-1, 34)
+
+
+def _knob_side(chip):
+    return chip._track.query_child_packing(chip._knob).pack_type
+
+
+def test_the_web_chip_moves_its_knob_to_the_side_that_matches_the_state():
+    from chinchilla.ui.gtk import Gtk
+    from chinchilla.ui.panel import WebChip
+
+    seen = []
+    chip = WebChip(on_change=seen.append)
+    assert _knob_side(chip) == Gtk.PackType.START
+
+    chip.set_active(True)
+
+    assert _knob_side(chip) == Gtk.PackType.END
+    assert seen == [True]
+
+    chip.set_active(False)
+
+    assert _knob_side(chip) == Gtk.PackType.START
+    assert seen == [True, False]
+
+
+def test_the_web_chip_keeps_its_knob_inside_the_track():
+    from chinchilla.ui.panel import WebChip
+
+    chip = WebChip()
+    chip.set_active(True)
+
+    assert chip._knob.get_parent() is chip._track
+    assert len(chip._track.get_children()) == 1

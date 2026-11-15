@@ -440,7 +440,8 @@ Inside the panel: `Ctrl+R` adds another cut, `Ctrl+N` starts a session,
 `Ctrl+S` opens the session selector, `Ctrl+W` toggles web search, `1`/`2`/`3`
 run the quick actions and `Esc` hides. The footer carries **Stop** (keeps the
 text already received), **Copy** (last answer to the clipboard) and **Retry**
-(re-asks the last question, no new cut needed).
+(regenerates the last answer in place: the question is reused, so no second
+turn is added and no new cut is needed).
 
 Clicking the session title (`▾`) opens the session selector: every stored
 conversation, with its first capture, the last question and a search box. The
