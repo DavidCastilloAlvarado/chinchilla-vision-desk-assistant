@@ -88,3 +88,104 @@ def test_usage_line_under_the_composer():
         ],
     )
     assert content.usage_label.get_text() == "in 1.0k · out 100 · cache 25%"
+
+
+def _press(button: int = 1):
+    from chinchilla.ui.gtk import Gdk
+
+    event = Gdk.Event.new(Gdk.EventType.BUTTON_PRESS)
+    event.button = button
+    event.x_root = 40
+    event.y_root = 40
+    event.time = 0
+    return event
+
+
+def test_clicking_the_title_does_not_start_a_window_drag():
+    """The title opens the session selector; dragging is for the header."""
+    from chinchilla.ui.panel import PanelWindow
+
+    window = PanelWindow()
+    drags = []
+    window.begin_move_drag = lambda *args: drags.append(args)  # type: ignore[method-assign]
+    try:
+        window.content.title_button.emit("button-press-event", _press())
+    finally:
+        window.destroy()
+
+    assert drags == []
+
+
+def test_dragging_the_header_still_moves_the_window():
+    from chinchilla.ui.panel import PanelWindow
+
+    window = PanelWindow()
+    drags = []
+    window.begin_move_drag = lambda *args: drags.append(args)  # type: ignore[method-assign]
+    try:
+        window.content.header.emit("button-press-event", _press())
+    finally:
+        window.destroy()
+
+    assert len(drags) == 1
+
+
+def _key(keyval: int):
+    from chinchilla.ui.gtk import Gdk
+
+    event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
+    event.keyval = keyval
+    event.state = Gdk.ModifierType(0)
+    return event
+
+
+def test_digits_run_the_quick_actions_when_the_composer_is_not_focused():
+    from chinchilla.ui.gtk import Gdk
+    from chinchilla.ui.panel import PanelWindow
+
+    prompts = []
+    window = PanelWindow(actions=[("translate", "Translate"), ("explain", "Explain")])
+    window.content.on_prompt = lambda action_id, _label=None: prompts.append(action_id)
+    window.show_all()
+    try:
+        window.set_focus(None)
+        window.emit("key-press-event", _key(Gdk.KEY_2))
+    finally:
+        window.destroy()
+
+    assert prompts == ["explain"]
+
+
+def test_digits_typed_in_the_composer_stay_text():
+    from chinchilla.ui.gtk import Gdk
+    from chinchilla.ui.panel import PanelWindow
+
+    prompts = []
+    window = PanelWindow(actions=[("translate", "Translate")])
+    window.content.on_prompt = lambda action_id, _label=None: prompts.append(action_id)
+    window.show_all()
+    try:
+        window.content.entry.grab_focus()
+        window.emit("key-press-event", _key(Gdk.KEY_1))
+        typing = window._typing()
+    finally:
+        window.destroy()
+
+    assert typing is True
+    assert prompts == []
+
+
+def test_busy_panel_offers_stop_and_locks_the_actions():
+    from chinchilla.ui.panel import PanelContent
+
+    content = PanelContent(actions=[("translate", "Translate")])
+    content.set_busy(True)
+
+    assert content.stop_button.get_visible() is True
+    assert content.send_button.get_sensitive() is False
+    assert content.action_buttons["translate"].get_sensitive() is False
+
+    content.set_busy(False)
+
+    assert content.stop_button.get_visible() is False
+    assert content.send_button.get_sensitive() is True

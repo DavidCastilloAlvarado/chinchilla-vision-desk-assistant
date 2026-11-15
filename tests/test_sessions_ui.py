@@ -19,6 +19,17 @@ def _pane(sessions=None, active_id="", picks=None, news=None):
     return pane
 
 
+def _row_labels(widget):
+    """Every label inside a row, at any depth."""
+    found = []
+    if hasattr(widget, "get_text"):
+        found.append(widget.get_text())
+    if isinstance(widget, __import__("gi").repository.Gtk.Container):
+        for child in widget.get_children():
+            found.extend(_row_labels(child))
+    return found
+
+
 def test_rows_follow_the_stored_sessions():
     pane = _pane()
 
@@ -45,12 +56,12 @@ def test_search_filters_by_title_and_text():
 
 def test_row_preview_prefers_the_user_question():
     pane = _pane()
-    labels = [
-        child.get_text()
-        for child in pane.listbox.get_children()[1].get_child().get_child().get_children()
-        if hasattr(child, "get_text")
+    previews = [
+        label
+        for label in _row_labels(pane.listbox.get_children()[1])
+        if "captures" in label
     ]
-    assert "why does this effect loop?" in labels
+    assert previews and "why does this effect loop?" in previews[0]
 
 
 def test_picking_a_row_reports_the_session_id():

@@ -9,15 +9,26 @@ from ..store import config
 from . import theme
 from .gtk import Gtk
 
-PAGE_MARGIN = 14
-
-
 def _label(text: str, muted: bool = False, wrap: bool = False) -> Gtk.Label:
     label = Gtk.Label(label=text)
     label.set_xalign(0)
     if muted:
         label.get_style_context().add_class("muted-label")
     label.set_line_wrap(wrap)
+    return label
+
+
+def _lbl(text: str) -> Gtk.Label:
+    """Left column of a settings row: 130px, like the wireframe."""
+    label = _label(text)
+    label.get_style_context().add_class("set-lbl")
+    label.set_size_request(130, -1)
+    return label
+
+
+def _section(text: str) -> Gtk.Label:
+    label = _label(text.upper())
+    label.get_style_context().add_class("set-section")
     return label
 
 
@@ -93,16 +104,86 @@ def _effective_entries(
     return notes
 
 
-class SettingsContent(Gtk.Notebook):
+class ToggleSwitch(Gtk.Button):
+    """A 30x17 switch drawn from boxes; GtkSwitch cannot be styled that small."""
+
+    def __init__(self, active: bool = False) -> None:
+        super().__init__()
+        self._active = bool(active)
+        self.set_relief(Gtk.ReliefStyle.NONE)
+        self.set_halign(Gtk.Align.START)
+        self.set_valign(Gtk.Align.CENTER)
+        self.get_style_context().add_class("set-switch")
+        self._track = Gtk.Box()
+        self._track.get_style_context().add_class("set-switch-track")
+        self._track.set_size_request(30, 17)
+        self._track.set_halign(Gtk.Align.START)
+        self._track.set_valign(Gtk.Align.CENTER)
+        self._knob = Gtk.Box()
+        self._knob.get_style_context().add_class("set-switch-knob")
+        self._knob.set_size_request(13, 13)
+        self._track.pack_start(self._knob, False, False, 0)
+        self.add(self._track)
+        self.connect("clicked", lambda *_: self.set_active(not self._active))
+        self._render()
+
+    def _render(self) -> None:
+        context = self._track.get_style_context()
+        if self._active:
+            context.add_class("on")
+        else:
+            context.remove_class("on")
+        self._knob.set_halign(Gtk.Align.END if self._active else Gtk.Align.START)
+
+    def get_active(self) -> bool:
+        return self._active
+
+    def set_active(self, active: bool) -> None:
+        self._active = bool(active)
+        self._render()
+
+
+class SettingsContent(Gtk.Box):
     """The tabbed form, separate from the window so it can be rendered."""
 
+    PAGES = ("General", "Actions", "Providers", "Web", "Data")
+
     def __init__(self, settings: config.Settings, on_save: Callable[[config.Settings], None] | None = None) -> None:
-        super().__init__()
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         theme.apply_css()
         self.settings = settings
         self.on_save = on_save
-        self.set_size_request(560, 560)
-        self.save_statuses: list[Gtk.Label] = []
+        self.set_size_request(600, 620)
+
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        head.get_style_context().add_class("set-head")
+        logo = Gtk.Label(label="C")
+        logo.get_style_context().add_class("set-logo")
+        head.pack_start(logo, False, False, 0)
+        title = Gtk.Label(label="Settings")
+        title.set_xalign(0)
+        title.get_style_context().add_class("set-title")
+        head.pack_start(title, False, False, 0)
+        self.head = head
+        self.head_tools = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        head.pack_end(self.head_tools, False, False, 0)
+
+        self.tab_buttons: dict[str, Gtk.Button] = {}
+        tabs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        for name in self.PAGES:
+            button = Gtk.Button(label=name)
+            button.set_relief(Gtk.ReliefStyle.NONE)
+            button.get_style_context().add_class("set-tab")
+            button.connect("clicked", lambda _b, page=name: self.set_current_page(page))
+            tabs.pack_start(button, False, False, 0)
+            self.tab_buttons[name] = button
+        head.pack_end(tabs, False, False, 0)
+        self.pack_start(head, False, False, 0)
+
+        self.stack = Gtk.Stack()
+        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.stack.set_transition_duration(120)
+        self.pack_start(self.stack, True, True, 0)
 
         self._build_general()
         self._build_actions()
@@ -110,15 +191,52 @@ class SettingsContent(Gtk.Notebook):
         self._build_web()
         self._build_data()
 
+        foot = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        foot.get_style_context().add_class("set-foot")
+        self.save_statuses: list[Gtk.Label] = []
+        status = Gtk.Label(label="")
+        status.set_xalign(0)
+        status.get_style_context().add_class("set-note")
+        self.save_statuses.append(status)
+        foot.pack_start(status, True, True, 0)
+
+        self.cancel_button = Gtk.Button(label="Cancel")
+        self.cancel_button.set_relief(Gtk.ReliefStyle.NONE)
+        self.cancel_button.get_style_context().add_class("set-button")
+        foot.pack_start(self.cancel_button, False, False, 0)
+        self.save_button = Gtk.Button(label="Save")
+        self.save_button.set_relief(Gtk.ReliefStyle.NONE)
+        self.save_button.get_style_context().add_class("set-button")
+        self.save_button.get_style_context().add_class("primary")
+        self.save_button.connect("clicked", lambda *_: self.save())
+        foot.pack_start(self.save_button, False, False, 0)
+        self.pack_start(foot, False, False, 0)
+
+        self.set_current_page("General")
+
     # ------------------------------------------------------------------ pages
+
+    def set_current_page(self, page) -> None:
+        """Show a page by name, or by index like ``settings --page 2``."""
+        name = self.PAGES[page] if isinstance(page, int) else page
+        self.stack.set_visible_child_name(name)
+        for key, button in self.tab_buttons.items():
+            context = button.get_style_context()
+            if key == name:
+                context.add_class("on")
+            else:
+                context.remove_class("on")
+
+    def current_page(self) -> str:
+        return self.stack.get_visible_child_name() or self.PAGES[0]
 
     def _page(self, title: str) -> Gtk.Box:
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        outer.set_margin_start(PAGE_MARGIN)
-        outer.set_margin_end(PAGE_MARGIN)
-        outer.set_margin_top(PAGE_MARGIN)
-        outer.set_margin_bottom(PAGE_MARGIN)
-        self.append_page(outer, Gtk.Label(label=title))
+        outer.get_style_context().add_class("set-body")
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.add(outer)
+        self.stack.add_named(scroll, title)
         return outer
 
     def _build_general(self) -> None:
@@ -126,19 +244,19 @@ class SettingsContent(Gtk.Notebook):
         grid = Gtk.Grid(column_spacing=12, row_spacing=8)
         self.language_entry = _entry(self.settings.language, width=180)
         self.level_entry = _entry(self.settings.level, width=180)
-        self.save_switch = Gtk.Switch()
+        self.save_switch = ToggleSwitch()
         self.save_switch.set_active(self.settings.save_sessions)
         self.retention_spin = Gtk.SpinButton.new_with_range(0, 3650, 1)
         self.retention_spin.set_value(self.settings.retention_days)
-        self.web_default_switch = Gtk.Switch()
+        self.web_default_switch = ToggleSwitch()
         self.web_default_switch.set_active(self.settings.web_enabled)
 
         rows = [
-            (_label("Answer language"), self.language_entry, _label("value for {language}", muted=True)),
-            (_label("Explanation level"), self.level_entry, _label("value for {level}", muted=True)),
-            (_label("Save sessions"), self.save_switch, _label("keep every conversation on disk", muted=True)),
-            (_label("Retention (days, 0 keeps)"), self.retention_spin, _label("", muted=True)),
-            (_label("Web search by default"), self.web_default_switch, _label("new sessions start with search on", muted=True)),
+            (_lbl("Answer language"), self.language_entry, _label("value for {language}", muted=True)),
+            (_lbl("Explanation level"), self.level_entry, _label("value for {level}", muted=True)),
+            (_lbl("Save sessions"), self.save_switch, _label("keep every conversation on disk", muted=True)),
+            (_lbl("Retention (days)"), self.retention_spin, _label("0 keeps everything", muted=True)),
+            (_lbl("Web by default"), self.web_default_switch, _label("new sessions start with search on", muted=True)),
         ]
         for index, (name, widget, hint) in enumerate(rows):
             grid.attach(name, 0, index, 1, 1)
@@ -146,24 +264,17 @@ class SettingsContent(Gtk.Notebook):
             grid.attach(hint, 2, index, 1, 1)
         page.pack_start(grid, False, False, 0)
 
-        shortcut = Gtk.Frame(label="Shortcut")
+        page.pack_start(_section("Shortcut"), False, False, 0)
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        row.set_margin_start(8)
-        row.set_margin_end(8)
-        row.set_margin_top(6)
-        row.set_margin_bottom(6)
-        row.pack_start(_label("Capture"), False, False, 0)
-        row.pack_start(_label(self.settings.hotkey.replace("<", "").replace(">", "+").strip("+").upper(), muted=True), False, False, 0)
-        row.pack_end(_label("install with: chinchilla shortcuts install", muted=True), False, False, 0)
-        shortcut.add(row)
-        page.pack_start(shortcut, False, False, 0)
+        row.pack_start(_lbl("Capture"), False, False, 0)
+        keys = self.settings.hotkey.replace("<", "").replace(">", "+").strip("+").upper()
+        shortcut_entry = _entry(keys, width=180)
+        shortcut_entry.set_editable(False)
+        shortcut_entry.set_tooltip_text("bind chinchilla capture in GNOME Settings > Keyboard")
+        row.pack_start(shortcut_entry, False, False, 0)
+        row.pack_start(_label("install with: chinchilla shortcuts install", muted=True), False, False, 0)
+        page.pack_start(row, False, False, 0)
 
-        page.pack_start(
-            self._save_row(),
-            False,
-            False,
-            0,
-        )
 
     def _build_actions(self) -> None:
         page = self._page("Actions")
@@ -180,22 +291,18 @@ class SettingsContent(Gtk.Notebook):
         )
         self.action_rows: dict[str, tuple[Gtk.Entry, Gtk.TextView, Gtk.Switch]] = {}
         for action in self.settings.actions:
-            frame = Gtk.Frame(label=action.id)
+            page.pack_start(_section(action.id), False, False, 0)
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-            box.set_margin_start(8)
-            box.set_margin_end(8)
-            box.set_margin_top(6)
-            box.set_margin_bottom(8)
 
             title_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             title_entry = _entry(action.title, width=200)
             title_entry.set_max_length(18)
-            web_switch = Gtk.Switch()
+            web_switch = ToggleSwitch()
             web_switch.set_active(action.web_default)
             reset = Gtk.Button(label="Reset to default")
             reset.get_style_context().add_class("ghost-button")
             reset.connect("clicked", self._on_reset_action, action.id, title_entry)
-            title_row.pack_start(_label("Title"), False, False, 0)
+            title_row.pack_start(_lbl("Title"), False, False, 0)
             title_row.pack_start(title_entry, False, False, 0)
             title_row.pack_end(reset, False, False, 0)
             title_row.pack_end(web_switch, False, False, 0)
@@ -204,10 +311,8 @@ class SettingsContent(Gtk.Notebook):
 
             prompt_view = _textview(action.prompt, 96)
             box.pack_start(_scrolled(prompt_view, 96), False, False, 0)
-            frame.add(box)
-            page.pack_start(frame, False, False, 0)
+            page.pack_start(box, False, False, 0)
             self.action_rows[action.id] = (title_entry, prompt_view, web_switch)
-        page.pack_start(self._save_row(), False, False, 0)
 
     def _build_providers(self) -> None:
         page = self._page("Providers")
@@ -244,11 +349,11 @@ class SettingsContent(Gtk.Notebook):
             save_key.get_style_context().add_class("ghost-button")
             save_key.connect("clicked", self._on_save_key, provider.id, key_entry, status)
 
-            grid.attach(_label("Base URL"), 0, 0, 1, 1)
+            grid.attach(_lbl("Base URL"), 0, 0, 1, 1)
             grid.attach(base_url, 1, 0, 2, 1)
-            grid.attach(_label("Model"), 0, 1, 1, 1)
+            grid.attach(_lbl("Model"), 0, 1, 1, 1)
             grid.attach(model, 1, 1, 2, 1)
-            grid.attach(_label("API key"), 0, 2, 1, 1)
+            grid.attach(_lbl("API key"), 0, 2, 1, 1)
             grid.attach(key_entry, 1, 2, 1, 1)
             grid.attach(save_key, 2, 2, 1, 1)
             grid.attach(status, 1, 3, 2, 1)
@@ -263,11 +368,10 @@ class SettingsContent(Gtk.Notebook):
                 "model": model,
                 "status": status,
             }
-        page.pack_start(self._save_row(), False, False, 0)
 
     def _build_web(self) -> None:
         page = self._page("Web")
-        self.mcp_switch = Gtk.Switch()
+        self.mcp_switch = ToggleSwitch()
         self.mcp_switch.set_active(self.settings.mcp_enabled)
         self.mcp_command_entry = _entry(" ".join(self.settings.mcp_command), width=360)
         self.chrome_entry = _entry(self.settings.mcp_env.get("CHROME_PATH", ""), width=260)
@@ -275,13 +379,13 @@ class SettingsContent(Gtk.Notebook):
         self.probe_label = _label("", muted=True, wrap=True)
 
         grid = Gtk.Grid(column_spacing=12, row_spacing=8)
-        grid.attach(_label("Enable web search"), 0, 0, 1, 1)
+        grid.attach(_lbl("Enable web search"), 0, 0, 1, 1)
         grid.attach(self.mcp_switch, 1, 0, 1, 1)
-        grid.attach(_label("MCP command"), 0, 1, 1, 1)
+        grid.attach(_lbl("MCP command"), 0, 1, 1, 1)
         grid.attach(self.mcp_command_entry, 1, 1, 1, 1)
-        grid.attach(_label("CHROME_PATH"), 0, 2, 1, 1)
+        grid.attach(_lbl("CHROME_PATH"), 0, 2, 1, 1)
         grid.attach(self.chrome_entry, 1, 2, 1, 1)
-        grid.attach(_label("GSEARCH_PROFILE"), 0, 3, 1, 1)
+        grid.attach(_lbl("GSEARCH_PROFILE"), 0, 3, 1, 1)
         grid.attach(self.profile_entry, 1, 3, 1, 1)
         page.pack_start(grid, False, False, 0)
 
@@ -303,7 +407,6 @@ class SettingsContent(Gtk.Notebook):
             False,
             0,
         )
-        page.pack_start(self._save_row(), False, False, 0)
 
     def _build_data(self) -> None:
         from .. import paths
@@ -316,7 +419,7 @@ class SettingsContent(Gtk.Notebook):
             ("Log", str(paths.log_path())),
         ):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            row.pack_start(_label(name), False, False, 0)
+            row.pack_start(_lbl(name), False, False, 0)
             row.pack_start(_label(value, muted=True), False, False, 0)
             page.pack_start(row, False, False, 0)
 
@@ -328,17 +431,6 @@ class SettingsContent(Gtk.Notebook):
         self.prune_label = _label("", muted=True)
         row.pack_start(self.prune_label, True, True, 0)
         page.pack_start(row, False, False, 0)
-
-    def _save_row(self) -> Gtk.Box:
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        row.set_margin_top(10)
-        self.save_statuses.append(_label("", muted=True))
-        row.pack_end(self.save_statuses[-1], False, False, 0)
-        save = Gtk.Button(label="Save")
-        save.get_style_context().add_class("accent-button")
-        save.connect("clicked", lambda *_: self.save())
-        row.pack_end(save, False, False, 0)
-        return row
 
     # ----------------------------------------------------------------- events
 
@@ -449,11 +541,15 @@ class SettingsWindow(Gtk.Window):
     def __init__(self, settings: config.Settings, on_save: Callable[[config.Settings], None] | None = None) -> None:
         super().__init__(title="Chinchilla settings")
         theme.apply_css()
+        self.get_style_context().add_class("settings")
         self.set_default_size(600, 640)
         self.set_position(Gtk.WindowPosition.CENTER)
-        header = Gtk.HeaderBar()
-        header.set_title("Settings")
-        header.set_show_close_button(True)
-        self.set_titlebar(header)
         self.content = SettingsContent(settings, on_save)
+        self.content.cancel_button.connect("clicked", lambda *_: self.close())
+        close = Gtk.Button(label="\u00d7")
+        close.set_relief(Gtk.ReliefStyle.NONE)
+        close.get_style_context().add_class("icon-btn")
+        close.set_tooltip_text("Close (Esc)")
+        close.connect("clicked", lambda *_: self.close())
+        self.content.head_tools.pack_start(close, False, False, 0)
         self.add(self.content)

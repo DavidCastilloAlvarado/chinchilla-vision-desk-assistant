@@ -51,6 +51,7 @@ class App(Gtk.Application):
         self.agent: Agent | None = None
         self.events: queue.Queue[AgentEvent] = queue.Queue()
         self.busy = False
+        self._stop = threading.Event()
         self.status = ""
         self.capture_parent = ""
 
@@ -85,6 +86,8 @@ class App(Gtk.Application):
             on_web=self.set_web,
             on_send=self._on_send,
             on_close=self.hide_panel,
+            on_retry=self.retry_last,
+            on_stop=self.stop_turn,
         )
         self.window.connect("destroy", lambda *_: self.quit())
         self.refresh_panel()
@@ -294,6 +297,7 @@ class App(Gtk.Application):
         self.busy = True
         content = self.window.content
         content.add_turn(turn)
+        content.set_active_action(action_id)
         content.start_assistant_turn(action_id)
         content.set_busy(True)
         self._status("thinking")
@@ -301,10 +305,13 @@ class App(Gtk.Application):
         agent = self._make_agent()
         self.agent = agent
         self.events = queue.Queue()
+        self._stop.clear()
 
         def worker() -> None:
             try:
                 for event in agent.run(turn):
+                    if self._stop.is_set():
+                        break
                     self.events.put(event)
             except Exception as exc:  # pragma: no cover - provider blow ups
                 LOGGER.exception("agent failed")
@@ -314,6 +321,25 @@ class App(Gtk.Application):
 
         threading.Thread(target=worker, daemon=True).start()
         GLib.timeout_add(PUMP_MS, self._pump)
+
+    def stop_turn(self) -> None:
+        """Keep what arrived so far and stop paying for the rest of the stream."""
+        if not self.busy:
+            return
+        self._stop.set()
+        self._finish_turn("stopped")
+
+    def retry_last(self) -> None:
+        """Ask the last question again, without needing a fresh cut."""
+        if self.busy:
+            return
+        last = next(
+            (turn for turn in reversed(self.session.turns) if turn.role == "user"), None
+        )
+        if last is None or not last.text:
+            self._status("nothing to retry", "error")
+            return
+        self.submit(last.text, None)
 
     def _pump(self) -> bool:
         finished = False
@@ -346,14 +372,14 @@ class App(Gtk.Application):
         elif event.type == "error":
             content.finish_assistant_turn(error=event.text)
 
-    def _finish_turn(self) -> None:
+    def _finish_turn(self, status: str = "ready") -> None:
         self.busy = False
         if self.window is not None:
             self.window.content.finish_assistant_turn()
             self.window.content.set_busy(False)
             self.window.content.set_title(self.session.title)
             self.window.content.set_usage(Usage.total(self.session.turns))
-        self._status("ready")
+        self._status(status)
 
     # ------------------------------------------------------------- ui helpers
 

@@ -373,3 +373,81 @@ def test_capture_skips_the_portal_without_the_screenshot_permission(xdg, monkeyp
     app._capture_worker()
 
     assert "no permission store" in seen["reason"]
+
+
+def test_picking_a_row_in_the_session_selector_opens_that_session(xdg):
+    app, _provider = _app()
+    _seed_capture(app)
+    app.submit("first thread")
+    _drain(app)
+    stored = app.session.id
+    app.new_session()
+    current = app.session.id
+
+    app.toggle_sessions()
+    pane = app.sessions_popover.pane
+    rows = pane.listbox.get_children()
+    target = next(
+        row
+        for row in rows
+        if getattr(row, "session_id", None) == stored
+    )
+    target.get_child().clicked()
+
+    assert app.session.id == stored
+    assert app.session.id != current
+    assert app.window.content.title_label.get_text() == app.session.title
+
+
+class SlowProvider:
+    """Yields one chunk at a time, waiting for the test to let it continue."""
+
+    def __init__(self):
+        import threading
+
+        self.chunks = ["first ", "second ", "third"]
+        self.release = threading.Event()
+        self.seen = 0
+
+    def chat(self, messages, tools=None, stream=True):
+        self.seen += 1
+        for text in self.chunks:
+            self.release.wait(5)
+            yield llm.Chunk("text", text=text)
+
+
+def test_stop_keeps_the_text_that_already_arrived(xdg):
+    from chinchilla.ui import app as app_module
+
+    provider = SlowProvider()
+    app, _ = _app(provider)
+    monkeypatch_event = provider.release
+    monkeypatch_event.set()
+    app.submit("translate this")
+
+    from chinchilla.ui.gtk import Gtk
+
+    while Gtk.events_pending():
+        Gtk.main_iteration_do(False)
+
+    app.stop_turn()
+
+    assert app.busy is False
+    assert app.window.content.status_label.get_text().lower().startswith("stop")
+    assert app.window.content.stop_button.get_visible() is False
+    assert app.window.content.send_button.get_sensitive()
+
+
+def test_retry_asks_the_last_question_again(xdg):
+    app, provider = _app()
+    _seed_capture(app)
+    app.submit("explain the diagram")
+    _drain(app)
+    turns_before = len(app.session.turns)
+
+    app.retry_last()
+    _drain(app)
+
+    assert len(provider.seen) == 2
+    assert len(app.session.turns) == turns_before + 2
+    assert app.window.content.active_action is None

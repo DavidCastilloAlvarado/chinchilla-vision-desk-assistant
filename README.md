@@ -429,7 +429,7 @@ chinchilla shortcuts install     # Ctrl+Alt+A -> chinchilla capture --panel
                                  # (reinstall after moving the checkout)
 chinchilla daemon                # tray icon, no capture (use it at login)
 chinchilla capture --panel       # capture a region and open the panel
-chinchilla settings              # language, quick actions, providers, web, data
+chinchilla settings              # tabs: General, Actions, Providers, Web, Data
 chinchilla sessions list         # stored conversations
 chinchilla search "query"        # one web search through the MCP server
 chinchilla doctor                # environment, provider, capture and shortcut state
@@ -437,7 +437,14 @@ chinchilla doctor --verbose      # plus the resolved paths, servers and tools
 ```
 
 Inside the panel: `Ctrl+R` adds another cut, `Ctrl+N` starts a session,
-`Ctrl+S` opens the session selector, `Ctrl+W` toggles web search, `Esc` hides.
+`Ctrl+S` opens the session selector, `Ctrl+W` toggles web search, `1`/`2`/`3`
+run the quick actions and `Esc` hides. The footer carries **Stop** (keeps the
+text already received), **Copy** (last answer to the clipboard) and **Retry**
+(re-asks the last question, no new cut needed).
+
+Clicking the session title (`▾`) opens the session selector: every stored
+conversation, with its first capture, the last question and a search box. The
+**+ New session** chip starts a clean thread; the previous one stays on disk.
 
 ### Chatting with and without a cut
 
