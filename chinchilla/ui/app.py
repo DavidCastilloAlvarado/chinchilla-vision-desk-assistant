@@ -11,7 +11,7 @@ from .. import log, paths, shortcuts
 from ..core import capture as capture_module
 from ..core import permission
 from ..core.agent import Agent, AgentEvent
-from ..core.thread import Turn
+from ..core.thread import Turn, Usage
 from ..store import config, session as session_store
 from . import panel as panel_ui
 from . import theme, tray as tray_ui
@@ -321,6 +321,7 @@ class App(Gtk.Application):
             self.window.content.finish_assistant_turn()
             self.window.content.set_busy(False)
             self.window.content.set_title(self.session.title)
+            self.window.content.set_usage(Usage.total(self.session.turns))
         self._status("ready")
 
     # ------------------------------------------------------------- ui helpers

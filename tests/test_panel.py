@@ -67,3 +67,24 @@ def test_panel_renders_a_full_frame(tmp_path):
         if colour[0] > 200 and 150 < colour[1] < 200 and colour[2] < 110
     ]
     assert accent, "the accent coloured send button should be visible"
+
+
+def test_usage_line_under_the_composer():
+    from chinchilla.core.thread import Turn, Usage
+    from chinchilla.ui import panel as panel_ui
+
+    content = panel_ui.PanelContent()
+    assert content.usage_label.get_text() == ""
+
+    content.set_usage(Usage(input_tokens=12400, output_tokens=1800, cached_tokens=9300))
+    assert content.usage_label.get_text() == "in 12.4k · out 1.8k · cache 75%"
+
+    content.set_session(
+        title="Counted",
+        turns=[
+            Turn(role="user", text="hi"),
+            Turn(role="assistant", text="hello", usage=Usage(500, 40, 0)),
+            Turn(role="assistant", text="again", usage=Usage(500, 60, 250)),
+        ],
+    )
+    assert content.usage_label.get_text() == "in 1.0k · out 100 · cache 25%"

@@ -136,3 +136,42 @@ def test_build_provider_uses_settings_and_env(xdg, monkeypatch):
     settings.active_provider = "anthropic"
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant")
     assert isinstance(llm.build_provider(settings), llm.Anthropic)
+
+
+def test_anthropic_stream_keeps_input_usage_from_message_start():
+    events = [
+        {
+            "type": "message_start",
+            "message": {
+                "usage": {
+                    "input_tokens": 40,
+                    "cache_read_input_tokens": 900,
+                    "cache_creation_input_tokens": 20,
+                    "output_tokens": 1,
+                }
+            },
+        },
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+        {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 25}},
+    ]
+    body = "".join(f"data: {json.dumps(event)}\n\n" for event in events).encode()
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)
+
+    provider = llm.Anthropic("anthropic", "https://api.test", "sk-ant", "claude-test", client=make_client(handler))
+    list(provider.chat([llm.Message("user", "hi")]))
+
+    assert provider.last_usage["input_tokens"] == 40
+    assert provider.last_usage["cache_read_input_tokens"] == 900
+    assert provider.last_usage["output_tokens"] == 25, "message_delta carries the final count"
+
+
+def test_anthropic_usage_becomes_cached_input_tokens():
+    from chinchilla.core.thread import Usage
+
+    usage = Usage.from_payload(
+        {"input_tokens": 40, "cache_read_input_tokens": 900, "cache_creation_input_tokens": 20, "output_tokens": 25}
+    )
+
+    assert (usage.input_tokens, usage.cached_tokens) == (960, 900)

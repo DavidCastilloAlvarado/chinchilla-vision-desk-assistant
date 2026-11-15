@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from ..core.thread import Capture, Source, Turn
+from ..core.thread import Capture, Source, Turn, Usage
 from . import theme
 from .gtk import Gdk, GdkPixbuf, GLib, Gtk
 
@@ -42,6 +42,25 @@ def to_pango(text: str) -> str:
 
 def clock(timestamp: float) -> str:
     return time.strftime("%H:%M", time.localtime(timestamp))
+
+
+def short_count(tokens: int) -> str:
+    if tokens >= 100000:
+        return f"{tokens / 1000:.0f}k"
+    if tokens >= 1000:
+        return f"{tokens / 1000:.1f}k"
+    return str(tokens)
+
+
+def usage_text(usage: Usage | None) -> str:
+    """One line for under the composer: in, out and the share served from cache."""
+    if usage is None or usage.is_empty:
+        return ""
+    return (
+        f"in {short_count(usage.input_tokens)}"
+        f" · out {short_count(usage.output_tokens)}"
+        f" · cache {usage.cached_ratio * 100:.0f}%"
+    )
 
 
 def load_thumbnail(path: str, size: int = 40) -> Gtk.Widget | None:
@@ -237,6 +256,14 @@ class PanelContent(Gtk.Box):
         self.send_button.connect("clicked", lambda *_: self._submit())
         row.pack_end(self.send_button, False, False, 0)
         box.pack_start(row, False, False, 0)
+
+        usage_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.usage_label = Gtk.Label(label="")
+        self.usage_label.set_xalign(1)
+        self.usage_label.set_ellipsize(3)
+        self.usage_label.get_style_context().add_class("muted-label")
+        usage_row.pack_end(self.usage_label, False, False, 0)
+        box.pack_start(usage_row, False, False, 0)
         self.pack_start(box, False, False, 0)
 
     def _build_status(self) -> None:
@@ -268,11 +295,22 @@ class PanelContent(Gtk.Box):
         self.clear_thread()
         for turn in turns or []:
             self.add_turn(turn, scroll=False)
+        self.set_usage(Usage.total(list(turns or [])))
         self.scroll_to_bottom()
 
     def set_title(self, title: str) -> None:
         self.title_label.set_text(title or "New session")
         self.title_label.set_tooltip_text(title or "New session")
+
+    def set_usage(self, usage: Usage | None) -> None:
+        self.usage_label.set_text(usage_text(usage))
+        if usage is None or usage.is_empty:
+            self.usage_label.set_tooltip_text("")
+        else:
+            self.usage_label.set_tooltip_text(
+                f"{usage.input_tokens} input tokens, {usage.output_tokens} output tokens, "
+                f"{usage.cached_tokens} of the input served from the provider cache"
+            )
 
     def set_captures(self, captures: list[Capture]) -> None:
         self._captures = list(captures)

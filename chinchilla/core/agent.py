@@ -11,7 +11,7 @@ from .. import log
 from ..store import config, session as session_store
 from . import capture as capture_module
 from . import llm, prompts, search
-from .thread import Source, Turn
+from .thread import Source, Turn, Usage
 
 LOGGER = log.get("agent")
 MAX_ROUNDS = 3
@@ -145,6 +145,7 @@ class Agent:
         messages = self.messages(with_web)
         collected: list[Source] = []
         final_text = ""
+        usage = Usage()
 
         try:
             for _round in range(MAX_ROUNDS):
@@ -156,6 +157,8 @@ class Agent:
                         yield AgentEvent("text", text=chunk.text)
                     elif chunk.type == "tool_call" and chunk.tool_call is not None:
                         tool_calls.append(chunk.tool_call)
+                    elif chunk.type == "usage":
+                        usage.add(Usage.from_payload(chunk.usage))
                 final_text += round_text
 
                 if not tool_calls or not with_web:
@@ -211,6 +214,7 @@ class Agent:
             role="assistant",
             text=search.scrub_citations(final_text.strip(), sources),
             sources=sources,
+            usage=None if usage.is_empty else usage,
         )
         self.session.add_turn(assistant)
         self.session.add_sources(sources)

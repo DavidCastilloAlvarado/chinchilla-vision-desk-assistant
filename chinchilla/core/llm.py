@@ -316,6 +316,12 @@ class Anthropic:
             "content-type": "application/json",
         }
 
+    def _track_usage(self, usage: dict) -> None:
+        """Merge a usage block: message_start sends input, message_delta the final output."""
+        for key, value in usage.items():
+            if isinstance(value, (int, float)):
+                self.last_usage[key] = int(value)
+
     def _payload(
         self, messages: list[Message], tools: list[ToolSpec] | None, stream: bool
     ) -> dict[str, Any]:
@@ -432,10 +438,10 @@ class Anthropic:
                         for slot in pending.values():
                             slot["json"] += delta.get("partial_json", "")
                             break
+                elif kind == "message_start":
+                    self._track_usage(((event.get("message") or {}).get("usage")) or {})
                 elif kind == "message_delta":
-                    usage = (event.get("usage") or {})
-                    if usage:
-                        self.last_usage = {key: int(value) for key, value in usage.items() if isinstance(value, (int, float))}
+                    self._track_usage(event.get("usage") or {})
                 elif kind == "error":
                     raise ProviderError(f"anthropic: {(event.get('error') or {}).get('message', 'stream error')}")
         for slot in pending.values():

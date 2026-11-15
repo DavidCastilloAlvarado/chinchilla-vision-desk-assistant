@@ -177,3 +177,51 @@ def test_newest_captures_win_the_image_budget(session, monkeypatch):
     assert users[0].images == []
     assert "no longer attached" in users[0].text
     assert users[1].images, "the newest cut must keep its image"
+
+
+def test_provider_usage_is_stored_on_the_reply(session):
+    settings = make_settings()
+    provider = FakeProvider(
+        [
+            llm.Chunk(
+                "usage",
+                usage={
+                    "prompt_tokens": 900,
+                    "completion_tokens": 30,
+                    "prompt_tokens_details": {"cached_tokens": 600},
+                },
+            ),
+            llm.Chunk("text", text="done"),
+            llm.Chunk("done"),
+        ]
+    )
+    agent = agent_module.Agent(session, settings, provider=provider)
+
+    list(agent.run(Turn(role="user", text="hi")))
+
+    usage = session.turns[-1].usage
+    assert usage is not None
+    assert (usage.input_tokens, usage.output_tokens, usage.cached_tokens) == (900, 30, 600)
+
+
+def test_usage_of_every_tool_round_is_added_up(session):
+    settings = make_settings(web_enabled=True)
+    session.web_enabled = True
+    provider = FakeProvider(
+        [
+            llm.Chunk("usage", usage={"prompt_tokens": 1000, "completion_tokens": 20}),
+            llm.Chunk("tool_call", tool_call=llm.ToolCall("call_1", "search", {"query": "tokens"})),
+        ],
+        [
+            llm.Chunk("usage", usage={"prompt_tokens": 1400, "completion_tokens": 50, "prompt_tokens_details": {"cached_tokens": 1000}}),
+            llm.Chunk("text", text="answer"),
+            llm.Chunk("done"),
+        ],
+    )
+    agent = agent_module.Agent(session, settings, provider=provider)
+
+    list(agent.run(Turn(role="user", text="why?")))
+
+    usage = session.turns[-1].usage
+    assert usage is not None
+    assert (usage.input_tokens, usage.output_tokens, usage.cached_tokens) == (2400, 70, 1000)

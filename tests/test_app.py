@@ -34,6 +34,14 @@ class StubProvider:
         self.seen.append(list(messages))
         for text in self.chunks:
             yield llm.Chunk("text", text=text)
+        yield llm.Chunk(
+            "usage",
+            usage={
+                "prompt_tokens": 1200,
+                "completion_tokens": 40,
+                "prompt_tokens_details": {"cached_tokens": 900},
+            },
+        )
 
 
 def _app(provider=None):
@@ -161,6 +169,18 @@ def test_a_capture_is_attached_to_one_turn_only(xdg):
     user_turns = [turn for turn in app.session.turns if turn.role == "user"]
     assert [len(turn.captures) for turn in user_turns] == [1, 0, 1]
     assert user_turns[2].captures[0] == app.session.captures[-1].id
+
+
+def test_usage_line_updates_after_a_turn(xdg):
+    app, _provider = _app()
+    assert app.window.content.usage_label.get_text() == ""
+
+    app.submit("hello")
+    _drain(app)
+
+    assert app.window.content.usage_label.get_text() == "in 1.2k · out 40 · cache 75%"
+    stored = session_store.Session.load(app.session.id)
+    assert stored.turns[-1].usage.cached_tokens == 900
 
 
 def test_web_toggle_is_saved_with_the_session(xdg):

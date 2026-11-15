@@ -392,6 +392,26 @@ The model still *sees* earlier cuts of the session, because the conversation is
 replayed on each turn — the last four images are kept and older ones are
 replaced by a note, so a long thread does not grow the bill.
 
+### Context and token cost
+
+The conversation is replayed in full on every turn — there is no summarisation
+yet, so a session's cost grows with the *square* of its length. What keeps it
+honest:
+
+| Control | Behaviour |
+| --- | --- |
+| image budget | `MAX_IMAGES = 4`; newest cuts keep their pixels, older ones become a text note |
+| one cut ≈ | ~700 image tokens at `max_side=1400` (measured on a 1400x800 JPEG) |
+| prefix caching | automatic with OpenAI-compatible providers, because the history is append-only; Anthropic needs explicit `cache_control`, which is not sent yet |
+| accounting | the reply's `usage` is stored per turn and totalled under the composer |
+
+Under the input box the panel prints `in 12.4k · out 1.8k · cache 82%` for the
+session: input tokens (cached ones included), output tokens, and the share of
+the input the provider served from its cache. Hover it for the exact integers.
+`0%` is normal for short conversations — OpenAI-compatible servers only cache a
+prompt prefix of about 1024 tokens, so a hit usually shows up after a few turns
+or once a cut is in the history.
+
 ### The capture flow
 
 1. `Ctrl+Alt+A` hides the panel and takes a silent full-screen frame through
