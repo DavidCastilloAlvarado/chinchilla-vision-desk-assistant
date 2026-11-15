@@ -78,6 +78,21 @@ def test_capture_is_written_next_to_the_session(xdg):
     assert session.last_capture().id == capture.id
 
 
+def test_captures_are_pending_until_a_turn_sends_them(xdg):
+    session = session_store.Session()
+    capture = session.add_capture(Image.new("RGB", (20, 20)))
+    assert [item.id for item in session.pending_captures()] == [capture.id]
+
+    session.mark_sent([capture.id])
+    session.save()
+
+    assert session.pending_captures() == []
+    reloaded = session_store.Session.load(session.id)
+    assert reloaded is not None
+    assert reloaded.capture(capture.id).sent is True
+    assert reloaded.pending_captures() == []
+
+
 def test_autotitle_uses_the_first_prompt(xdg):
     session = session_store.Session()
     session.autotitle("Translate this dashboard error message please")

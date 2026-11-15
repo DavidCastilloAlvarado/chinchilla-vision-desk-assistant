@@ -6,6 +6,9 @@ Press `Ctrl+Alt+A`, drag a box, and a panel opens with **Translate**,
 **Explain**, **Fix grammar** and a free prompt box. Keep the conversation
 going, add more screen cuts, switch between saved sessions.
 
+The panel is also a normal chat: ask a plain question without cutting anything.
+A cut rides with the next message only, so follow-ups stay text.
+
 Built for Linux desktops (GNOME/Wayland tested), no terminal required.
 
 ## Status
@@ -367,6 +370,27 @@ chinchilla doctor --verbose      # plus the resolved paths, servers and tools
 
 Inside the panel: `Ctrl+R` adds another cut, `Ctrl+N` starts a session,
 `Ctrl+S` opens the session selector, `Ctrl+W` toggles web search, `Esc` hides.
+
+### Chatting with and without a cut
+
+The panel is a plain chat as well: type in the box and press `Enter` and the
+model answers, no capture needed. A cut is **not** a sticky attachment — it
+belongs to the next message only:
+
+- take a cut, then send: the message carries that image (the header shows the
+  thumbnail until it is sent, then reads `cut sent`);
+- follow-up messages go out as text only, so a conversation about one
+  screenshot does not re-send it on every turn;
+- take another cut mid-conversation and only *that* one rides along with the
+  next message. Captures you take before typing are queued, so two cuts taken
+  in a row are sent together.
+
+The three quick actions (**Translate**, **Explain**, **Fix grammar**) are image
+tasks: with no fresh cut they just say `take a cut first` in the status line.
+
+The model still *sees* earlier cuts of the session, because the conversation is
+replayed on each turn — the last four images are kept and older ones are
+replaced by a note, so a long thread does not grow the bill.
 
 ### The capture flow
 

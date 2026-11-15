@@ -107,14 +107,60 @@ def test_answers_are_persisted_to_the_session_file(xdg):
     assert stored.captures[0].path
 
 
-def test_prompt_without_a_capture_is_refused(xdg):
+def test_prompt_without_a_capture_is_a_plain_chat(xdg):
     app, provider = _app()
 
     app.submit("hello there")
+    _drain(app)
+
+    assert provider.seen, "the model should be asked even without a cut"
+    user_turns = [turn for turn in app.session.turns if turn.role == "user"]
+    assert user_turns[-1].captures == []
+    assert app.session.turns[-1].text == "Hello from the stub."
+
+
+def test_quick_action_without_a_capture_is_refused(xdg):
+    app, provider = _app()
+
+    app._on_action("translate", "translate")
 
     assert app.busy is False
     assert provider.seen == []
-    assert "capture" in app.window.content.status_label.get_text()
+    assert "cut" in app.window.content.status_label.get_text()
+
+
+def test_follow_up_after_a_capture_carries_no_image(xdg):
+    app, provider = _app()
+    _seed_capture(app)
+    app.submit("what is this?")
+    _drain(app)
+    sent = len(provider.seen)
+
+    app.submit("and what colour is it?")
+    _drain(app)
+
+    user_turns = [turn for turn in app.session.turns if turn.role == "user"]
+    assert user_turns[0].captures and user_turns[-1].captures == []
+    second_request = provider.seen[sent][-1]
+    assert second_request.text == "and what colour is it?"
+    assert second_request.images == []
+
+
+def test_a_capture_is_attached_to_one_turn_only(xdg):
+    app, provider = _app()
+    _seed_capture(app)
+
+    app.submit("first look")
+    _drain(app)
+    app.submit("second look")
+    _drain(app)
+    app.add_capture(Image.new("RGB", (30, 20), (0, 90, 200)))
+    app.submit("new cut")
+    _drain(app)
+
+    user_turns = [turn for turn in app.session.turns if turn.role == "user"]
+    assert [len(turn.captures) for turn in user_turns] == [1, 0, 1]
+    assert user_turns[2].captures[0] == app.session.captures[-1].id
 
 
 def test_web_toggle_is_saved_with_the_session(xdg):

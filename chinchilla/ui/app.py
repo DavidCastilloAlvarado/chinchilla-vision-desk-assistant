@@ -242,16 +242,21 @@ class App(Gtk.Application):
         text = (text or "").strip()
         if not text or self.busy or self.window is None:
             return
-        if not self.session.captures:
-            self._status("capture a region first", "error")
+        pending = self.session.pending_captures()
+        if action_id and not pending:
+            self._status("take a cut first: Ctrl+Alt+A", "error")
             return
 
         turn = Turn(
             role="user",
             text=text,
-            captures=[self.session.captures[-1].id],
+            captures=[item.id for item in pending],
             action=action_id,
         )
+        if pending:
+            self.session.mark_sent(turn.captures)
+            self.session.save()
+        self.window.content.set_captures(self.session.captures)
         if action_id and self.session.title == session_store.DEFAULT_TITLE:
             action = self.settings.action(action_id)
             self.session.title = action.title if action is not None else self.session.title

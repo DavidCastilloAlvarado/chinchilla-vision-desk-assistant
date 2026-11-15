@@ -278,17 +278,19 @@ class PanelContent(Gtk.Box):
         self._captures = list(captures)
         for child in self.thumb_stack.get_children():
             self.thumb_stack.remove(child)
-        if not captures:
-            placeholder = Gtk.Label(label="no cut")
+        pending = [capture for capture in captures if not capture.sent]
+        if not pending:
+            label = "cut sent" if captures else "no cut"
+            placeholder = Gtk.Label(label=label)
             placeholder.get_style_context().add_class("muted-label")
             self.thumb_stack.pack_start(placeholder, False, False, 0)
         else:
-            for capture in captures[-2:]:
+            for capture in pending[-2:]:
                 thumb = load_thumbnail(capture.path, 32)
                 if thumb is not None:
                     self.thumb_stack.pack_start(thumb, False, False, 0)
-            if len(captures) > 2:
-                more = Gtk.Label(label=f"+{len(captures) - 2}")
+            if len(pending) > 2:
+                more = Gtk.Label(label=f"+{len(pending) - 2}")
                 more.get_style_context().add_class("muted-label")
                 self.thumb_stack.pack_start(more, False, False, 0)
         self.thumb_stack.show_all()

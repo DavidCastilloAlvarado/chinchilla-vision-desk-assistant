@@ -64,6 +64,15 @@ class Session:
     def last_capture(self) -> Capture | None:
         return self.captures[-1] if self.captures else None
 
+    def pending_captures(self) -> list[Capture]:
+        """Cuts taken since the last message; only these join the next turn."""
+        return [item for item in self.captures if not item.sent]
+
+    def mark_sent(self, capture_ids: list[str]) -> None:
+        for capture in self.captures:
+            if capture.id in capture_ids:
+                capture.sent = True
+
     def turn_count(self) -> int:
         return len([turn for turn in self.turns if turn.role == "user"])
 

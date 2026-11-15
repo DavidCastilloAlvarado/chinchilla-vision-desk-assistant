@@ -26,6 +26,9 @@ class Capture:
     created_at: float = field(default_factory=now)
     rect: dict[str, int] | None = None
     label: str = ""
+    # a cut belongs to the turn that sends it; later messages in the same
+    # conversation are plain text unless the user takes another cut
+    sent: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -36,6 +39,7 @@ class Capture:
             "created_at": self.created_at,
             "rect": self.rect,
             "label": self.label,
+            "sent": self.sent,
         }
 
     @classmethod
@@ -48,6 +52,7 @@ class Capture:
             created_at=float(data.get("created_at") or now()),
             rect=data.get("rect"),
             label=data.get("label", ""),
+            sent=bool(data.get("sent")),
         )
 
 

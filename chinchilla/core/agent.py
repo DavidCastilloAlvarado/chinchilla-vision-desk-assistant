@@ -80,19 +80,31 @@ class Agent:
 
     def messages(self, with_web: bool) -> list[llm.Message]:
         messages = [llm.Message("system", self.system_prompt(with_web))]
+        images_by_turn: dict[int, list[bytes]] = {}
         budget = MAX_IMAGES
-        pending = list(self.session.turns)
-        for turn in pending:
+        # newest cuts win the budget: an old screenshot is context, the new one is the question
+        for index in range(len(self.session.turns) - 1, -1, -1):
+            turn = self.session.turns[index]
+            if turn.role != "user" or not turn.captures:
+                continue
+            images: list[bytes] = []
+            for capture_id in turn.captures:
+                if budget <= 0:
+                    break
+                data = self._image_bytes(capture_id)
+                if data:
+                    images.append(data)
+                    budget -= 1
+            if images:
+                images_by_turn[index] = images
+
+        for index, turn in enumerate(self.session.turns):
             if turn.role == "user":
-                images: list[bytes] = []
-                for capture_id in turn.captures:
-                    if budget <= 0:
-                        break
-                    data = self._image_bytes(capture_id)
-                    if data:
-                        images.append(data)
-                        budget -= 1
-                messages.append(llm.Message("user", turn.text, images=images))
+                images = images_by_turn.get(index, [])
+                text = turn.text
+                if turn.captures and not images:
+                    text = f"{text} (the screenshot from this turn is no longer attached)"
+                messages.append(llm.Message("user", text, images=images))
             elif turn.text:
                 messages.append(llm.Message("assistant", turn.text))
         return messages

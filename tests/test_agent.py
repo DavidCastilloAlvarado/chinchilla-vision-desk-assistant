@@ -148,3 +148,32 @@ def test_search_budget_is_enforced(session, monkeypatch):
     events = list(agent.run(Turn(role="user", text="search twice")))
     notices = [event.text for event in events if event.type == "notice"]
     assert any("budget" in text for text in notices)
+
+
+def test_text_only_turns_are_sent_without_images(session):
+    settings = make_settings()
+    provider = FakeProvider([llm.Chunk("text", text="sure"), llm.Chunk("done")])
+    agent = agent_module.Agent(session, settings, provider=provider)
+
+    list(agent.run(Turn(role="user", text="just a question")))
+
+    messages = provider.calls[0]["messages"]
+    assert messages[-1].text == "just a question"
+    assert all(not message.images for message in messages)
+
+
+def test_newest_captures_win_the_image_budget(session, monkeypatch):
+    monkeypatch.setattr(agent_module, "MAX_IMAGES", 1)
+    settings = make_settings()
+    session.turns.append(Turn(role="user", text="old cut", captures=[session.add_capture(Image.new("RGB", (30, 20))).id]))
+    session.turns.append(Turn(role="assistant", text="old answer"))
+    latest = session.add_capture(Image.new("RGB", (40, 25)))
+    session.turns.append(Turn(role="user", text="new cut", captures=[latest.id]))
+    agent = agent_module.Agent(session, settings, provider=FakeProvider())
+
+    messages = agent.messages(with_web=False)
+
+    users = [message for message in messages if message.role == "user"]
+    assert users[0].images == []
+    assert "no longer attached" in users[0].text
+    assert users[1].images, "the newest cut must keep its image"
