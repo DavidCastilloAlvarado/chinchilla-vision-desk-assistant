@@ -285,3 +285,50 @@ def test_usage_of_every_tool_round_is_added_up(session):
     usage = session.turns[-1].usage
     assert usage is not None
     assert (usage.input_tokens, usage.output_tokens, usage.cached_tokens) == (2400, 70, 1000)
+
+
+def test_reasoning_is_streamed_as_events_and_saved_on_the_turn(session):
+    settings = make_settings()
+    provider = FakeProvider(
+        [
+            llm.Chunk("reasoning", text="17*20=340, "),
+            llm.Chunk("reasoning", text="17*3=51."),
+            llm.Chunk("text", text="391"),
+            llm.Chunk("done"),
+        ]
+    )
+    agent = agent_module.Agent(session, settings, provider=provider)
+
+    events = list(agent.run(agent.prepare_turn(text="17*23?")))
+
+    thinking = "".join(event.text for event in events if event.type == "reasoning")
+    assert thinking == "17*20=340, 17*3=51."
+    assistant = session.turns[-1]
+    assert assistant.reasoning == "17*20=340, 17*3=51."
+    assert assistant.text == "391"
+
+
+def test_a_reasoning_only_turn_is_still_answered(session):
+    settings = make_settings()
+    provider = FakeProvider([llm.Chunk("reasoning", text="hmm"), llm.Chunk("done")])
+    agent = agent_module.Agent(session, settings, provider=provider)
+
+    list(agent.run(agent.prepare_turn(text="hi")))
+
+    assert session.turns[-1].text
+    assert session.turns[-1].reasoning == "hmm"
+
+
+def test_a_length_finish_is_reported(session):
+    settings = make_settings()
+
+    class TruncatingProvider(FakeProvider):
+        last_finish_reason = "length"
+
+    provider = TruncatingProvider([llm.Chunk("text", text="once upon a"), llm.Chunk("done")])
+    agent = agent_module.Agent(session, settings, provider=provider)
+
+    events = list(agent.run(agent.prepare_turn(text="tell me a poem")))
+
+    notices = [event.text for event in events if event.type == "notice"]
+    assert any("output limit" in notice for notice in notices)

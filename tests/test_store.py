@@ -246,3 +246,16 @@ def test_reasoning_effort_defaults_to_medium_and_round_trips():
 def test_reasoning_effort_ignores_unknown_values():
     assert config.Settings.from_dict({"reasoning_effort": "turbo"}).reasoning_effort == "medium"
     assert config.Settings.from_dict({"reasoning_effort": " HIGH "}).reasoning_effort == "high"
+
+
+def test_the_output_budget_defaults_to_32k_and_round_trips():
+    settings = config.default_settings()
+    assert settings.max_tokens == 32768
+
+    settings.max_tokens = 8192
+    assert config.Settings.from_dict(settings.to_dict()).max_tokens == 8192
+
+
+def test_a_nonsense_budget_falls_back_to_the_default():
+    assert config.Settings.from_dict({"max_tokens": 0}).max_tokens == 32768
+    assert config.Settings.from_dict({"max_tokens": "lots"}).max_tokens == 32768

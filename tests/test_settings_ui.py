@@ -177,3 +177,12 @@ def test_the_general_page_sets_the_reasoning_effort():
     content.effort_combo.set_active_id("low")
 
     assert content.collect().reasoning_effort == "low"
+
+
+def test_the_general_page_sets_the_output_budget():
+    content = _content()
+    assert content.tokens_spin.get_value() == 32768
+
+    content.tokens_spin.set_value(8192)
+
+    assert content.collect().max_tokens == 8192

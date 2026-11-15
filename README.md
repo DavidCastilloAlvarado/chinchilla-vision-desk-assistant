@@ -195,8 +195,11 @@ What to expect:
   `--max-model-len` (4096) overflows after a few turns with a cut attached. Use
   16k+ and start a new session for long threads.
 - **Thinking models** (R1 distills, QwQ) stream to `reasoning_content`, which
-  the panel does not render yet: the reply appears once the model stops
-  thinking.
+  now shows in the folded `REASONING` block above the answer. llama.cpp and
+  vLLM keep the answer in `content`, so nothing is lost.
+- **Output budget** is 32768 `max_tokens`; llama.cpp and LM Studio accept it,
+  vLLM accepts it up to the model's context, and the request is retried without
+  the field if a build complains.
 - **Reasoning effort** is sent as `reasoning_effort` on every request (the
   dropdown defaults to `medium`). vLLM only uses it for models started with a
   reasoning parser; a server that answers 400 is retried without the field, so
@@ -477,6 +480,32 @@ The model still *sees* earlier cuts of the session, because the conversation is
 replayed on each turn — the last four images are kept and older ones are
 replaced by a note, so a long thread does not grow the bill.
 
+### Reasoning and the output budget
+
+A thinking model (`Qwen3`, R1 distills, `gpt-5`-style, Claude with extended
+thinking) streams two things: the tokens where it thinks, and then the answer.
+Both are shown and neither is cut:
+
+- **The thinking** arrives under a folded `REASONING` row above the answer. It
+  opens by itself while the model is thinking, folds as soon as the answer
+  starts, and stays one click away (click the row to reopen it). It is stored
+  with the turn, so scrolling back or reopening the session shows it again.
+  Providers name the stream `reasoning_content` (vLLM, llama.cpp, LM Studio) or
+  `reasoning` (OpenRouter and some gateways); both are understood, and any other
+  field is ignored so it can never leak into the answer.
+- **The budget** is 32768 output tokens (`Settings` → General → *Max output
+  tokens*). It used to be 1400, which silently truncated long answers — a poem
+  stopped mid-sentence. If a server refuses the value, the request is retried
+  once *without* `max_tokens`, so the server's own limit applies; Anthropic
+  cannot omit it, so it is lowered to the maximum the model announced.
+- **A cut reply says so**: when a server still stops early it reports
+  `finish_reason: length` and the panel prints `the model hit its output limit`
+  in the status line instead of pretending the answer ended.
+- Reasoning is **not replayed** to the provider on later turns, so a long think
+  costs nothing after the fact; only the answer goes back into the history. The
+  `out` counter under the composer does include the thinking tokens, because
+  that is what the provider bills.
+
 ### Context and token cost
 
 The conversation is replayed in full on every turn — there is no summarisation
@@ -488,6 +517,7 @@ honest:
 | image budget | `MAX_IMAGES = 4`; newest cuts keep their pixels, older ones become a text note |
 | one cut ≈ | ~700 image tokens at `max_side=1400` (measured on a 1400x800 JPEG) |
 | prefix caching | automatic with OpenAI-compatible providers, because the history is append-only; Anthropic needs explicit `cache_control`, which is not sent yet |
+| reasoning | streamed in its own folded block and never replayed to the model; `out` still bills it |
 | accounting | the reply's `usage` is stored per turn and totalled under the composer |
 
 Under the input box the panel prints `in 12.4k · out 1.8k · cache 82%` for the
@@ -511,10 +541,10 @@ field that trades latency for thinking. The dropdown in the footer picks it:
 
 - The choice is stored in `settings.json`, so it survives a restart;
   `medium` is used until you pick something else. The General settings page has
-  the same dropdown.
+  the same dropdown, and `chinchilla doctor --verbose` prints both the effort and
+  the output budget (`budget: 32768 output tokens`).
 - It only applies to the next turn you send: providers are rebuilt per turn, so
-  the change needs no restart. `chinchilla doctor --verbose` prints the level
-  it will use (`effort: medium`).
+  the change needs no restart.
 - Only OpenAI-compatible endpoints receive the field (OpenAI, OpenRouter,
   custom/vLLM, and Anthropic is left untouched because its API has no such
   parameter). A server that rejects it with a 400 is retried once without it,

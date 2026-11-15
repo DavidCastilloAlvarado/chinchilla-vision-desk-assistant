@@ -149,6 +149,7 @@ class Agent:
         messages = self.messages(with_web)
         collected: list[Source] = []
         final_text = ""
+        reasoning_text = ""
         usage = Usage()
 
         try:
@@ -157,7 +158,10 @@ class Agent:
                 round_text = ""
                 tool_calls: list[llm.ToolCall] = []
                 for chunk in self.provider.chat(messages, tools=tools or None):
-                    if chunk.type == "text" and chunk.text:
+                    if chunk.type == "reasoning" and chunk.text:
+                        reasoning_text += chunk.text
+                        yield AgentEvent("reasoning", text=chunk.text)
+                    elif chunk.type == "text" and chunk.text:
                         round_text += chunk.text
                         yield AgentEvent("text", text=chunk.text)
                     elif chunk.type == "tool_call" and chunk.tool_call is not None:
@@ -222,7 +226,10 @@ class Agent:
                 # Never end a turn on a tool call: ask for the answer without tools.
                 messages.append(llm.Message("system", prompts.FINAL_ANSWER_PROMPT))
                 for chunk in self.provider.chat(messages, tools=None):
-                    if chunk.type == "text" and chunk.text:
+                    if chunk.type == "reasoning" and chunk.text:
+                        reasoning_text += chunk.text
+                        yield AgentEvent("reasoning", text=chunk.text)
+                    elif chunk.type == "text" and chunk.text:
                         final_text += chunk.text
                         yield AgentEvent("text", text=chunk.text)
                     elif chunk.type == "usage":
@@ -247,12 +254,18 @@ class Agent:
         assistant = Turn(
             role="assistant",
             text=answer,
+            reasoning=reasoning_text.strip(),
             sources=sources,
             usage=None if usage.is_empty else usage,
         )
         self.session.add_turn(assistant)
         self.session.add_sources(sources)
         self._persist(assistant)
+        if getattr(self.provider, "last_finish_reason", "") == "length":
+            yield AgentEvent(
+                "notice",
+                text="the model hit its output limit; raise it in Settings or ask for less",
+            )
         if sources:
             yield AgentEvent("sources", sources=sources)
         yield AgentEvent("done", turn=assistant)

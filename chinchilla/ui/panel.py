@@ -199,6 +199,8 @@ class PanelContent(Gtk.Box):
         self._streaming_label: Gtk.Label | None = None
         self._streaming_text = ""
         self._streaming_turn: Gtk.Box | None = None
+        self._reasoning_text = ""
+        self._reasoning_expander: Gtk.Expander | None = None
 
         self._build_header()
         self._build_tools()
@@ -553,6 +555,8 @@ class PanelContent(Gtk.Box):
         self._streaming_turn = self._build_turn(turn)
         self._streaming_label = self._streaming_turn.label
         self._streaming_text = ""
+        self._reasoning_text = ""
+        self._reasoning_expander = None
         self.thread.pack_start(self._streaming_turn, False, False, 0)
         self._streaming_turn.show_all()
         self.scroll_to_bottom()
@@ -564,6 +568,30 @@ class PanelContent(Gtk.Box):
             self.start_assistant_turn()
         self._streaming_text += delta
         self._streaming_label.set_markup(to_pango(self._streaming_text))
+        if self._reasoning_expander is not None:
+            # the answer began: fold the thinking away, it stays one click away
+            self._reasoning_expander.set_expanded(False)
+        self.scroll_to_bottom()
+
+    def append_reasoning(self, delta: str) -> None:
+        """Show the thinking tokens, collapsed once the answer starts."""
+        if self._streaming_turn is None:
+            self.start_assistant_turn()
+        self._reasoning_text += delta
+        expander = self._reasoning_expander
+        if expander is None:
+            expander = self._reasoning_block("")
+            bubble = self._streaming_turn.bubble
+            children = bubble.get_children()
+            index = children.index(self._streaming_turn.label) if self._streaming_turn.label in children else len(children)
+            bubble.pack_start(expander, False, False, 0)
+            bubble.reorder_child(expander, index)
+            self._reasoning_expander = expander
+        expander.body.set_text(self._reasoning_text)
+        expander.show()
+        expander.body.show()
+        # open while there is nothing else to read, like a live thinking log
+        expander.set_expanded(not self._streaming_text)
         self.scroll_to_bottom()
 
     def finish_assistant_turn(
@@ -577,9 +605,13 @@ class PanelContent(Gtk.Box):
             self._last_answer = self._streaming_text or (error or "")
         if sources and self._streaming_turn is not None:
             self._streaming_turn.add_sources(sources)
+        if self._reasoning_expander is not None:
+            self._reasoning_expander.set_expanded(False)
         self._streaming_label = None
         self._streaming_turn = None
         self._streaming_text = ""
+        self._reasoning_text = ""
+        self._reasoning_expander = None
         self.set_busy(False)
         self.scroll_to_bottom()
 
@@ -725,6 +757,9 @@ class PanelContent(Gtk.Box):
         if turn.captures:
             bubble.pack_start(self._crop_row(turn.captures), False, False, 0)
 
+        if turn.reasoning:
+            bubble.pack_start(self._reasoning_block(turn.reasoning), False, False, 0)
+
         label = Gtk.Label()
         label.set_line_wrap(True)
         label.set_xalign(0)
@@ -749,6 +784,32 @@ class PanelContent(Gtk.Box):
 
         frame.add_sources = add_sources
         return frame
+
+    def _reasoning_block(self, text: str) -> Gtk.Expander:
+        """Collapsed thinking log, like the one llama.cpp draws.
+
+        It opens while the model is still thinking and folds away as soon as the
+        answer starts, so the reply stays readable but the tokens are one click
+        away.
+        """
+        expander = Gtk.Expander()
+        expander.set_expanded(False)
+        expander.get_style_context().add_class("reasoning-block")
+        head = Gtk.Label()
+        head.set_use_markup(True)
+        head.set_markup('<span size="small">REASONING</span>')
+        head.set_xalign(0)
+        expander.set_label_widget(head)
+        body = Gtk.Label(label=text)
+        body.set_line_wrap(True)
+        body.set_xalign(0)
+        body.set_selectable(True)
+        body.set_margin_top(3)
+        body.set_margin_bottom(3)
+        body.get_style_context().add_class("reasoning-body")
+        expander.add(body)
+        expander.body = body
+        return expander
 
     def _crop_row(self, capture_ids: list[str]) -> Gtk.Widget:
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -1005,6 +1066,8 @@ def demo_content(width: int = PANEL_WIDTH, height: int = 760) -> PanelContent:
                 "subscription tier still in its discounted introductory period.\n\n"
                 "The chart agrees \u2014 the amber series flattens right after the promo "
                 "window, so the run-rate does not hold without new sign-ups.",
+                reasoning="The user asks about risk. The text names the promo window, the "
+                "chart shows the amber series flattening after it, so the two agree.",
                 sources=[Source(title="Handling expired tokens", url="https://example.com/tokens")],
                 usage=Usage(2400, 320, 1800),
             ),

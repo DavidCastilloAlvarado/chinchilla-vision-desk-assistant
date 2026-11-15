@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Iterator
 
@@ -20,6 +21,8 @@ from ..store import config
 LOGGER = log.get("llm")
 DEFAULT_TIMEOUT = 120.0
 ANTHROPIC_VERSION = "2023-06-01"
+# optional payload fields, and the attribute that stops sending each one
+_FIELD_FLAGS = {"reasoning_effort": "_drop_reasoning", "max_tokens": "_drop_max_tokens"}
 
 
 class ProviderError(RuntimeError):
@@ -59,10 +62,41 @@ class ToolCall:
 
 @dataclass
 class Chunk:
-    type: str  # text | tool_call | usage | done
+    type: str  # text | reasoning | tool_call | usage | done
     text: str = ""
     tool_call: ToolCall | None = None
     usage: dict[str, int] = field(default_factory=dict)
+
+
+def _reasoning_text(payload: dict[str, Any]) -> str:
+    """The thinking stream, under the names servers actually use.
+
+    vLLM, llama.cpp and LM Studio send `reasoning_content`; OpenRouter and some
+    gateways send `reasoning`. Anything else is ignored, so an unknown field can
+    never leak into the answer.
+    """
+    for key in ("reasoning_content", "reasoning"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def max_tokens_from_error(exc: ProviderError) -> int | None:
+    """`max_tokens: 32768 > 4096, which is the maximum allowed` -> 4096."""
+    message = str(exc)
+    patterns = (
+        r"max_tokens:\s*\d+\s*>\s*(\d+)",
+        r"maximum allowed[^0-9]*(\d+)",
+        r"(\d+)\s*output tokens",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, message)
+        if match:
+            value = int(match.group(1))
+            if 256 <= value <= 1_000_000:
+                return value
+    return None
 
 
 def _data_uri(image: bytes) -> str:
@@ -134,7 +168,7 @@ class OpenAICompatible:
         model: str,
         client: httpx.Client | None = None,
         temperature: float = 0.2,
-        max_tokens: int = 1400,
+        max_tokens: int = config.DEFAULT_MAX_TOKENS,
         reasoning_effort: str = "",
     ) -> None:
         base_url = normalise_base_url(base_url)
@@ -151,7 +185,9 @@ class OpenAICompatible:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.reasoning_effort = (reasoning_effort or "").strip().lower()
+        self.last_finish_reason = ""
         self._drop_reasoning = False
+        self._drop_max_tokens = False
         self._client = client
         self.last_usage: dict[str, int] = {}
 
@@ -173,9 +209,10 @@ class OpenAICompatible:
             "model": self.model,
             "messages": [self._message(item) for item in messages],
             "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
             "stream": stream,
         }
+        if self.max_tokens and not self._drop_max_tokens:
+            payload["max_tokens"] = self.max_tokens
         if stream:
             payload["stream_options"] = {"include_usage": True}
         if self.reasoning_effort and not self._drop_reasoning:
@@ -235,25 +272,33 @@ class OpenAICompatible:
         tools: list[ToolSpec] | None = None,
         stream: bool = True,
     ) -> Iterator[Chunk]:
-        """Stream one completion, dropping `reasoning_effort` if the server refuses it."""
-        emitted = False
-        try:
-            for chunk in self._chat_payload(messages, tools, stream):
-                emitted = True
-                yield chunk
-        except ProviderError as exc:
-            if emitted or not self._refused_reasoning(exc):
-                raise
-            LOGGER.warning("%s: retrying without reasoning_effort (%s)", self.id, exc)
-            self._drop_reasoning = True
-            for chunk in self._chat_payload(messages, tools, stream):
-                yield chunk
+        """Stream one completion, dropping optional fields the server refuses."""
+        while True:
+            emitted = False
+            try:
+                for chunk in self._chat_payload(messages, tools, stream):
+                    emitted = True
+                    yield chunk
+                return
+            except ProviderError as exc:
+                field = None if emitted else self._refused_field(exc)
+                if field is None:
+                    raise
+                LOGGER.warning("%s: retrying without %s (%s)", self.id, field, exc)
+                setattr(self, _FIELD_FLAGS[field], True)
 
-    def _refused_reasoning(self, exc: ProviderError) -> bool:
-        if not self.reasoning_effort or self._drop_reasoning:
-            return False
+    def _refused_field(self, exc: ProviderError) -> str | None:
+        """Optional payload fields this server dislikes, so we can retry without them."""
         message = str(exc).lower()
-        return "reasoning_effort" in message or "reasoning effort" in message
+        if (
+            self.reasoning_effort
+            and not self._drop_reasoning
+            and ("reasoning_effort" in message or "reasoning effort" in message)
+        ):
+            return "reasoning_effort"
+        if self.max_tokens and not self._drop_max_tokens and "max_tokens" in message:
+            return "max_tokens"
+        return None
 
     def _chat_payload(
         self,
@@ -266,7 +311,12 @@ class OpenAICompatible:
             response = self._post(payload)
             self._raise_for_status(response)
             data = response.json()
-            message = (data.get("choices") or [{}])[0].get("message") or {}
+            choice = (data.get("choices") or [{}])[0]
+            self.last_finish_reason = choice.get("finish_reason") or ""
+            message = choice.get("message") or {}
+            reasoning = _reasoning_text(message)
+            if reasoning:
+                yield Chunk("reasoning", text=reasoning)
             if message.get("content"):
                 yield Chunk("text", text=message["content"])
             for call in message.get("tool_calls") or []:
@@ -285,7 +335,13 @@ class OpenAICompatible:
                 choices = event.get("choices") or []
                 if not choices:
                     continue
-                delta = choices[0].get("delta") or {}
+                choice = choices[0]
+                if choice.get("finish_reason"):
+                    self.last_finish_reason = choice["finish_reason"]
+                delta = choice.get("delta") or {}
+                reasoning = _reasoning_text(delta)
+                if reasoning:
+                    yield Chunk("reasoning", text=reasoning)
                 if delta.get("content"):
                     yield Chunk("text", text=delta["content"])
                 for call in delta.get("tool_calls") or []:
@@ -351,7 +407,7 @@ class Anthropic:
         api_key: str = "",
         model: str = "",
         client: httpx.Client | None = None,
-        max_tokens: int = 1400,
+        max_tokens: int = config.DEFAULT_MAX_TOKENS,
         temperature: float = 0.2,
     ) -> None:
         base_url = normalise_base_url(base_url)
@@ -459,6 +515,23 @@ class Anthropic:
         tools: list[ToolSpec] | None = None,
         stream: bool = True,
     ) -> Iterator[Chunk]:
+        """Stream one reply, lowering `max_tokens` if the model allows less."""
+        try:
+            yield from self._chat(messages, tools, stream)
+        except ProviderError as exc:
+            limit = max_tokens_from_error(exc)
+            if limit is None or limit >= self.max_tokens:
+                raise
+            LOGGER.warning("anthropic: max_tokens %s refused, retrying with %s", self.max_tokens, limit)
+            self.max_tokens = limit
+            yield from self._chat(messages, tools, stream)
+
+    def _chat(
+        self,
+        messages: list[Message],
+        tools: list[ToolSpec] | None = None,
+        stream: bool = True,
+    ) -> Iterator[Chunk]:
         payload = self._payload(messages, tools, stream)
         url = f"{self.base_url}/v1/messages"
         if not stream:
@@ -466,7 +539,9 @@ class Anthropic:
             raise_for_status(self.id, response)
             data = response.json()
             for block in data.get("content") or []:
-                if block.get("type") == "text":
+                if block.get("type") == "thinking" and block.get("thinking"):
+                    yield Chunk("reasoning", text=block["thinking"])
+                elif block.get("type") == "text":
                     yield Chunk("text", text=block.get("text", ""))
                 elif block.get("type") == "tool_use":
                     yield Chunk(
@@ -493,7 +568,9 @@ class Anthropic:
                         }
                 elif kind == "content_block_delta":
                     delta = event.get("delta") or {}
-                    if delta.get("type") == "text_delta" and delta.get("text"):
+                    if delta.get("type") == "thinking_delta" and delta.get("thinking"):
+                        yield Chunk("reasoning", text=delta["thinking"])
+                    elif delta.get("type") == "text_delta" and delta.get("text"):
                         yield Chunk("text", text=delta["text"])
                     elif delta.get("type") == "input_json_delta":
                         for slot in pending.values():
@@ -536,6 +613,7 @@ def build_provider(settings: config.Settings, client: httpx.Client | None = None
             api_key=key,
             model=provider.model,
             client=client,
+            max_tokens=settings.max_tokens,
         )
     return OpenAICompatible(
         provider_id=provider.id,
@@ -543,5 +621,6 @@ def build_provider(settings: config.Settings, client: httpx.Client | None = None
         api_key=key,
         model=provider.model,
         client=client,
+        max_tokens=settings.max_tokens,
         reasoning_effort=settings.reasoning_effort,
     )

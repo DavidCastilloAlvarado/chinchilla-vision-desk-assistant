@@ -264,6 +264,24 @@ combobox.effort-combo button {{
 }}
 combobox.effort-combo arrow {{ color: {TEXT_MUTED}; min-width: 9px; min-height: 9px; }}
 
+/* --------------------------------------------------------------- reasoning */
+expander.reasoning-block {{
+  margin-top: 2px;
+  margin-bottom: 2px;
+}}
+expander.reasoning-block > title {{
+  color: #6f7a8e;
+  padding: 0;
+  min-height: 0;
+}}
+expander.reasoning-block > title:hover {{ color: {TEXT_MUTED}; }}
+label.reasoning-body {{
+  color: #8b95a7;
+  font-size: 11px;
+  border-left: 2px solid #2c3340;
+  padding-left: 6px;
+}}
+
 /* ----------------------------------------------------------- generic bits */
 label.muted-label {{ color: {TEXT_MUTED}; font-size: 10.5px; }}
 label.body-label {{ color: #dde2eb; font-size: 12px; }}

@@ -112,6 +112,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             f"       effort:   {effort}"
             + ("" if provider.kind != "anthropic" else " (ignored, Anthropic has no reasoning_effort)")
         )
+        print(f"       budget:   {settings.max_tokens} output tokens")
         saved = settings.providers.get(settings.active_provider)
         if (
             saved is not None

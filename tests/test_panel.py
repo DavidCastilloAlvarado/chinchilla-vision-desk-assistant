@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from chinchilla.ui.gtk import Gtk
 from chinchilla.ui.panel import PanelContent, demo_content, to_pango
 
 pytestmark = pytest.mark.skipif(
@@ -343,3 +344,46 @@ def test_an_unknown_effort_falls_back_to_the_default():
     content = PanelContent()
     content.set_effort("turbo")
     assert content.effort_value() == "medium"
+
+
+def test_reasoning_streams_into_a_block_that_folds_when_the_answer_starts():
+    content = PanelContent()
+    content.start_assistant_turn()
+
+    content.append_reasoning("Let me compute 17*23.")
+
+    expander = content._reasoning_expander
+    assert expander is not None
+    assert expander.get_expanded() is True
+    assert expander.body.get_text() == "Let me compute 17*23."
+
+    content.append_text("391")
+    assert expander.get_expanded() is False
+
+    content.finish_assistant_turn()
+    assert content._reasoning_expander is None
+
+
+def test_a_stored_turn_renders_its_reasoning_collapsed():
+    from chinchilla.core.thread import Turn
+
+    content = PanelContent()
+    content.set_session(title="t", turns=[Turn(role="assistant", text="391", reasoning="17*20=340")])
+
+    expanders = [item for item in content.thread.get_children() if hasattr(item, "label")]
+
+    def find(widget):
+        if isinstance(widget, Gtk.Expander):
+            return widget
+        if isinstance(widget, Gtk.Container):
+            for child in widget.get_children():
+                found = find(child)
+                if found is not None:
+                    return found
+        return None
+
+    expander = find(content.thread)
+    assert expander is not None
+    assert expander.get_expanded() is False
+    assert expander.body.get_text() == "17*20=340"
+    assert expanders

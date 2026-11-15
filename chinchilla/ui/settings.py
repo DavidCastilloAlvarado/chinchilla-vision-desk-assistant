@@ -250,6 +250,9 @@ class SettingsContent(Gtk.Box):
         self.retention_spin.set_value(self.settings.retention_days)
         self.web_default_switch = ToggleSwitch()
         self.web_default_switch.set_active(self.settings.web_enabled)
+        self.tokens_spin = Gtk.SpinButton.new_with_range(512, 200_000, 1024)
+        self.tokens_spin.set_value(self.settings.max_tokens)
+        self.tokens_spin.set_tooltip_text("output budget per answer; a thinking model needs room")
         self.effort_combo = Gtk.ComboBoxText()
         for level in config.REASONING_EFFORTS:
             self.effort_combo.append(level, level)
@@ -261,6 +264,11 @@ class SettingsContent(Gtk.Box):
             (_lbl("Save sessions"), self.save_switch, _label("keep every conversation on disk", muted=True)),
             (_lbl("Retention (days)"), self.retention_spin, _label("0 keeps everything", muted=True)),
             (_lbl("Web by default"), self.web_default_switch, _label("new sessions start with search on", muted=True)),
+            (
+                _lbl("Max output tokens"),
+                self.tokens_spin,
+                _label("the answer is never cut short of this budget", muted=True),
+            ),
             (
                 _lbl("Reasoning effort"),
                 self.effort_combo,
@@ -507,6 +515,7 @@ class SettingsContent(Gtk.Box):
         settings.save_sessions = bool(self.save_switch.get_active())
         settings.web_enabled = bool(self.web_default_switch.get_active())
         settings.retention_days = int(self.retention_spin.get_value())
+        settings.max_tokens = int(self.tokens_spin.get_value())
         settings.reasoning_effort = self.effort_combo.get_active_id() or config.DEFAULT_REASONING
 
         for action_id, (title_entry, prompt_view, web_switch) in self.action_rows.items():

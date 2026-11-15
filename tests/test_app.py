@@ -492,3 +492,21 @@ def test_an_unknown_effort_is_ignored(xdg):
     app.set_reasoning_effort("turbo")
 
     assert app.settings.reasoning_effort == "medium"
+
+
+class ReasoningProvider(StubProvider):
+    def chat(self, messages, tools=None, stream=True):
+        self.seen.append(list(messages))
+        yield llm.Chunk("reasoning", text="the user wants a poem")
+        yield from super().chat(messages, tools=tools, stream=stream)
+
+
+def test_reasoning_reaches_the_session_file(xdg):
+    app, provider = _app(ReasoningProvider())
+    _seed_capture(app)
+    app.submit("write a poem")
+    _drain(app)
+
+    stored = session_store.Session.load(app.session.id)
+    assert stored.turns[-1].reasoning == "the user wants a poem"
+    assert stored.turns[-1].text == "Hello from the stub."

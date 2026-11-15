@@ -377,6 +377,8 @@ class App(Gtk.Application):
             return
         if event.type == "text":
             content.append_text(event.text)
+        elif event.type == "reasoning":
+            content.append_reasoning(event.text)
         elif event.type == "tool":
             self._status(f"searching: {event.detail or event.tool}")
         elif event.type == "notice":

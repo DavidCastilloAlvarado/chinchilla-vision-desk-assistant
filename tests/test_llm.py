@@ -269,12 +269,12 @@ def test_a_server_that_refuses_reasoning_effort_still_answers():
     assert provider._drop_reasoning is True
 
 
-def test_an_unrelated_error_keeps_the_reasoning_effort():
+def test_an_unrelated_error_is_raised_without_a_second_try():
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(json.loads(request.content))
-        return httpx.Response(400, json={"error": {"message": "max_tokens too large"}})
+        return httpx.Response(400, json={"error": {"message": "invalid api key"}})
 
     provider = llm.OpenAICompatible(
         "custom", "https://api.test/v1", "sk-x", "test-model", client=make_client(handler), reasoning_effort="low"
@@ -283,3 +283,123 @@ def test_an_unrelated_error_keeps_the_reasoning_effort():
         list(provider.chat([llm.Message("user", "hi")]))
 
     assert len(calls) == 1
+
+
+def test_reasoning_content_streams_as_its_own_chunk():
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=openai_sse(
+                {"choices": [{"delta": {"reasoning_content": "17*20=340, "}}]},
+                {"choices": [{"delta": {"reasoning_content": "17*3=51."}}]},
+                {"choices": [{"delta": {"content": "391"}, "finish_reason": "stop"}]},
+            ),
+        )
+
+    provider = llm.OpenAICompatible("custom", "https://api.test/v1", "sk-x", "test-model", client=make_client(handler))
+    chunks = list(provider.chat([llm.Message("user", "17*23?")]))
+
+    reasoning = "".join(chunk.text for chunk in chunks if chunk.type == "reasoning")
+    answer = "".join(chunk.text for chunk in chunks if chunk.type == "text")
+    assert reasoning == "17*20=340, 17*3=51."
+    assert answer == "391"
+    assert provider.last_finish_reason == "stop"
+
+
+def test_the_reasoning_alias_is_understood_too():
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=openai_sse({"choices": [{"delta": {"reasoning": "thinking..."}}]}),
+        )
+
+    provider = llm.OpenAICompatible("custom", "https://api.test/v1", "sk-x", "test-model", client=make_client(handler))
+    chunks = list(provider.chat([llm.Message("user", "hi")]))
+
+    assert [chunk.text for chunk in chunks if chunk.type == "reasoning"] == ["thinking..."]
+
+
+def test_an_unknown_delta_field_never_leaks_into_the_answer():
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=openai_sse({"choices": [{"delta": {"reasoning_tokens": "nope"}}]}),
+        )
+
+    provider = llm.OpenAICompatible("custom", "https://api.test/v1", "sk-x", "test-model", client=make_client(handler))
+    chunks = list(provider.chat([llm.Message("user", "hi")]))
+
+    assert [chunk.text for chunk in chunks if chunk.type == "text"] == []
+
+
+def test_the_generation_budget_is_32k_by_default():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=openai_sse())
+
+    provider = llm.OpenAICompatible("custom", "https://api.test/v1", "sk-x", "test-model", client=make_client(handler))
+    list(provider.chat([llm.Message("user", "hi")]))
+
+    assert captured["body"]["max_tokens"] == 32768
+
+
+def test_a_server_that_refuses_the_budget_answers_without_it():
+    bodies = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        bodies.append(body)
+        if body.get("max_tokens", 0) > 4096:
+            return httpx.Response(400, json={"error": {"message": "max_tokens too large for this model"}})
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=openai_sse({"choices": [{"delta": {"content": "ok"}}]}),
+        )
+
+    provider = llm.OpenAICompatible("custom", "https://api.test/v1", "sk-x", "test-model", client=make_client(handler))
+    chunks = list(provider.chat([llm.Message("user", "hi")]))
+
+    assert "".join(chunk.text for chunk in chunks if chunk.type == "text") == "ok"
+    assert bodies[0]["max_tokens"] == 32768
+    assert "max_tokens" not in bodies[1]
+
+
+def test_anthropic_lowers_its_budget_instead_of_failing():
+    bodies = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        bodies.append(body)
+        if body.get("max_tokens", 0) > 4096:
+            return httpx.Response(
+                400,
+                json={
+                    "type": "error",
+                    "error": {
+                        "message": "max_tokens: 32768 > 4096, which is the maximum allowed number "
+                        "of output tokens for claude-3-haiku-20240307"
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                b'event: content_block_delta\ndata: {"type": "content_block_delta", "delta": '
+                b'{"type": "text_delta", "text": "ok"}}\n\n'
+                b'event: message_delta\ndata: {"type": "message_delta", "usage": {"output_tokens": 2}}\n\n'
+            ),
+        )
+
+    provider = llm.Anthropic("anthropic", "https://api.test", "sk-ant", "claude-test", client=make_client(handler))
+    chunks = list(provider.chat([llm.Message("user", "hi")]))
+
+    assert "".join(chunk.text for chunk in chunks if chunk.type == "text") == "ok"
+    assert bodies[0]["max_tokens"] == 32768
+    assert bodies[1]["max_tokens"] == 4096

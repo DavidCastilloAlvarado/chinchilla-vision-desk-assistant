@@ -157,6 +157,8 @@ class Turn:
 
     role: str = "user"
     text: str = ""
+    # what the model thought before answering, when the provider streams it
+    reasoning: str = ""
     created_at: float = field(default_factory=now)
     captures: list[str] = field(default_factory=list)
     action: str | None = None
@@ -169,6 +171,7 @@ class Turn:
         return {
             "role": self.role,
             "text": self.text,
+            "reasoning": self.reasoning,
             "created_at": self.created_at,
             "captures": list(self.captures),
             "action": self.action,
@@ -182,6 +185,7 @@ class Turn:
         return cls(
             role=data.get("role", "user"),
             text=data.get("text", ""),
+            reasoning=data.get("reasoning", "") or "",
             created_at=float(data.get("created_at") or now()),
             captures=list(data.get("captures") or []),
             action=data.get("action"),

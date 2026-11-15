@@ -118,6 +118,9 @@ def resolved_mcp(settings: "Settings") -> tuple[list[str], dict[str, str]]:
 DEFAULT_LANGUAGE = "Spanish"
 DEFAULT_LEVEL = "B1"
 DEFAULT_MAX_SIDE = 1400
+# generations are not cut on purpose: a thinking model needs room for both the
+# reasoning and the answer, and a server that refuses the value gets a retry
+DEFAULT_MAX_TOKENS = 32768
 REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
 DEFAULT_REASONING = "medium"
 
@@ -172,6 +175,7 @@ class Settings:
     save_sessions: bool = True
     retention_days: int = 0
     max_side: int = DEFAULT_MAX_SIDE
+    max_tokens: int = DEFAULT_MAX_TOKENS
     reasoning_effort: str = DEFAULT_REASONING
     panel_width: int = 404
     hotkey: str = "<Control><Alt>a"
@@ -212,6 +216,7 @@ class Settings:
             "save_sessions": self.save_sessions,
             "retention_days": self.retention_days,
             "max_side": self.max_side,
+            "max_tokens": self.max_tokens,
             "reasoning_effort": self.reasoning_effort,
             "panel_width": self.panel_width,
             "hotkey": self.hotkey,
@@ -263,7 +268,7 @@ class Settings:
         for key in ("web_enabled", "save_sessions", "mcp_enabled"):
             if key in data:
                 setattr(settings, key, bool(data[key]))
-        for key in ("retention_days", "max_side", "panel_width"):
+        for key in ("retention_days", "max_side", "max_tokens", "panel_width"):
             if isinstance(data.get(key), (int, float)) and data[key] > 0:
                 setattr(settings, key, int(data[key]))
         if isinstance(data.get("mcp_command"), list) and data["mcp_command"]:
