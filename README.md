@@ -6,6 +6,8 @@ Press `Ctrl+Alt+A`, drag a box, and a panel opens with **Translate**,
 **Explain**, **Fix grammar** and a free prompt box. Keep the conversation
 going, add more screen cuts, switch between saved sessions.
 
+![The Chinchilla panel: a translate turn with its capture, a follow-up carrying two cuts, the folded reasoning block, the sources of a web search and the token counters in the footer](docs/screenshots/panel.png)
+
 The panel is also a normal chat: ask a plain question without cutting anything.
 A cut rides with the next message only, so follow-ups stay text.
 
