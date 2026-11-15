@@ -107,6 +107,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         origin = config.provider_origin(settings)
         print(f"       endpoint: {provider.base_url or 'unset'} ({origin['base_url']})")
         print(f"       model:    {provider.model or 'unset'} ({origin['model']})")
+        effort = settings.reasoning_effort
+        print(
+            f"       effort:   {effort}"
+            + ("" if provider.kind != "anthropic" else " (ignored, Anthropic has no reasoning_effort)")
+        )
         saved = settings.providers.get(settings.active_provider)
         if (
             saved is not None

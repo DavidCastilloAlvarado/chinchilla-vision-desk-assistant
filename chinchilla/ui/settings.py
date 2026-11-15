@@ -250,6 +250,10 @@ class SettingsContent(Gtk.Box):
         self.retention_spin.set_value(self.settings.retention_days)
         self.web_default_switch = ToggleSwitch()
         self.web_default_switch.set_active(self.settings.web_enabled)
+        self.effort_combo = Gtk.ComboBoxText()
+        for level in config.REASONING_EFFORTS:
+            self.effort_combo.append(level, level)
+        self.effort_combo.set_active_id(self.settings.reasoning_effort)
 
         rows = [
             (_lbl("Answer language"), self.language_entry, _label("value for {language}", muted=True)),
@@ -257,6 +261,11 @@ class SettingsContent(Gtk.Box):
             (_lbl("Save sessions"), self.save_switch, _label("keep every conversation on disk", muted=True)),
             (_lbl("Retention (days)"), self.retention_spin, _label("0 keeps everything", muted=True)),
             (_lbl("Web by default"), self.web_default_switch, _label("new sessions start with search on", muted=True)),
+            (
+                _lbl("Reasoning effort"),
+                self.effort_combo,
+                _label("sent as reasoning_effort, when the endpoint knows it", muted=True),
+            ),
         ]
         for index, (name, widget, hint) in enumerate(rows):
             grid.attach(name, 0, index, 1, 1)
@@ -498,6 +507,7 @@ class SettingsContent(Gtk.Box):
         settings.save_sessions = bool(self.save_switch.get_active())
         settings.web_enabled = bool(self.web_default_switch.get_active())
         settings.retention_days = int(self.retention_spin.get_value())
+        settings.reasoning_effort = self.effort_combo.get_active_id() or config.DEFAULT_REASONING
 
         for action_id, (title_entry, prompt_view, web_switch) in self.action_rows.items():
             action = settings.action(action_id)

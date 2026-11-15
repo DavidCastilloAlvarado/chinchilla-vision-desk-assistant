@@ -167,3 +167,13 @@ def test_settings_toggles_start_in_the_state_they_were_built_with():
 
     assert switch.get_active() is True
     assert switch._track.get_style_context().has_class("on")
+
+
+def test_the_general_page_sets_the_reasoning_effort():
+    settings = config.default_settings()
+    content = _content(settings)
+    assert content.effort_combo.get_active_id() == "medium"
+
+    content.effort_combo.set_active_id("low")
+
+    assert content.collect().reasoning_effort == "low"

@@ -233,3 +233,16 @@ def test_effective_provider_resolves_a_provider_that_is_not_active(xdg, monkeypa
 
     assert config.effective_provider(settings, "custom").base_url == "http://exported:1/v1"
     assert config.effective_provider(settings, "openai").id == "openai"
+
+
+def test_reasoning_effort_defaults_to_medium_and_round_trips():
+    settings = config.default_settings()
+    assert settings.reasoning_effort == "medium"
+
+    settings.reasoning_effort = "xhigh"
+    assert config.Settings.from_dict(settings.to_dict()).reasoning_effort == "xhigh"
+
+
+def test_reasoning_effort_ignores_unknown_values():
+    assert config.Settings.from_dict({"reasoning_effort": "turbo"}).reasoning_effort == "medium"
+    assert config.Settings.from_dict({"reasoning_effort": " HIGH "}).reasoning_effort == "high"

@@ -211,3 +211,75 @@ def test_a_local_endpoint_needs_no_api_key():
     provider = llm.OpenAICompatible("custom", "http://localhost:8080/v1", "", "local")
 
     assert "Authorization" not in provider._headers()
+
+
+def test_reasoning_effort_is_sent_in_the_payload():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=openai_sse())
+
+    provider = llm.OpenAICompatible(
+        "custom", "https://api.test/v1", "sk-x", "test-model", client=make_client(handler), reasoning_effort="High"
+    )
+    list(provider.chat([llm.Message("user", "hi")]))
+
+    assert captured["body"]["reasoning_effort"] == "high"
+
+
+def test_no_reasoning_effort_field_when_unset():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=openai_sse())
+
+    provider = llm.OpenAICompatible("custom", "https://api.test/v1", "sk-x", "test-model", client=make_client(handler))
+    list(provider.chat([llm.Message("user", "hi")]))
+
+    assert "reasoning_effort" not in captured["body"]
+
+
+def test_a_server_that_refuses_reasoning_effort_still_answers():
+    bodies = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        bodies.append(body)
+        if "reasoning_effort" in body:
+            return httpx.Response(
+                400,
+                json={"error": {"message": "unrecognized field reasoning_effort"}},
+            )
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=openai_sse({"choices": [{"delta": {"content": "ok"}}]}),
+        )
+
+    provider = llm.OpenAICompatible(
+        "custom", "https://api.test/v1", "sk-x", "test-model", client=make_client(handler), reasoning_effort="medium"
+    )
+    chunks = list(provider.chat([llm.Message("user", "hi")]))
+
+    assert "".join(chunk.text for chunk in chunks if chunk.type == "text") == "ok"
+    assert "reasoning_effort" in bodies[0]
+    assert "reasoning_effort" not in bodies[1]
+    assert provider._drop_reasoning is True
+
+
+def test_an_unrelated_error_keeps_the_reasoning_effort():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        return httpx.Response(400, json={"error": {"message": "max_tokens too large"}})
+
+    provider = llm.OpenAICompatible(
+        "custom", "https://api.test/v1", "sk-x", "test-model", client=make_client(handler), reasoning_effort="low"
+    )
+    with pytest.raises(llm.ProviderError):
+        list(provider.chat([llm.Message("user", "hi")]))
+
+    assert len(calls) == 1

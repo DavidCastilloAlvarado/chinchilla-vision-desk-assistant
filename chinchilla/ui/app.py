@@ -88,6 +88,7 @@ class App(Gtk.Application):
             on_close=self.hide_panel,
             on_retry=self.retry_last,
             on_stop=self.stop_turn,
+            on_effort=self.set_reasoning_effort,
         )
         self.window.connect("destroy", lambda *_: self.quit())
         self.refresh_panel()
@@ -161,6 +162,7 @@ class App(Gtk.Application):
             provider_label=self.settings.provider_label(),
             web_enabled=self.session.web_enabled,
         )
+        self.window.content.set_effort(self.settings.reasoning_effort)
         self._sync_provider_label()
 
     def toggle_sessions(self) -> None:
@@ -399,6 +401,21 @@ class App(Gtk.Application):
         self.session.web_enabled = bool(enabled)
         self.session.save()
         self._status("web search on" if enabled else "web search off")
+
+    def set_reasoning_effort(self, value: str) -> None:
+        """Remember the effort across sessions and providers."""
+        if value not in config.REASONING_EFFORTS:
+            return
+        if self.settings.reasoning_effort == value:
+            return
+        self.settings.reasoning_effort = value
+        try:
+            config.save_settings(self.settings)
+        except OSError as exc:  # pragma: no cover - disk problems
+            LOGGER.warning("cannot save the reasoning effort: %s", exc)
+            self._status("cannot save the effort", "error")
+            return
+        self._status(f"reasoning {value}")
 
     def _status(self, text: str, kind: str = "info") -> None:
         self.status = text

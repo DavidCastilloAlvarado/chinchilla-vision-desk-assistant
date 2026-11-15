@@ -197,6 +197,10 @@ What to expect:
 - **Thinking models** (R1 distills, QwQ) stream to `reasoning_content`, which
   the panel does not render yet: the reply appears once the model stops
   thinking.
+- **Reasoning effort** is sent as `reasoning_effort` on every request (the
+  dropdown defaults to `medium`). vLLM only uses it for models started with a
+  reasoning parser; a server that answers 400 is retried without the field, so
+  an older build still works.
 - **Prefix cache** hits are reported by vLLM, so the `cache N%` line under the
   composer works locally too.
 
@@ -443,6 +447,11 @@ text already received), **Copy** (last answer to the clipboard) and **Retry**
 (regenerates the last answer in place: the question is reused, so no second
 turn is added and no new cut is needed).
 
+Next to the model name the footer has a small **effort** dropdown (`low`,
+`medium`, `high`, `xhigh`): whatever you pick there is remembered for the next
+start and sent to the model as `reasoning_effort` (see
+[Reasoning effort](#reasoning-effort)).
+
 Clicking the session title (`▾`) opens the session selector: every stored
 conversation, with its first capture, the last question and a search box. The
 **+ New session** chip starts a clean thread; the previous one stays on disk.
@@ -487,6 +496,32 @@ the input the provider served from its cache. Hover it for the exact integers.
 `0%` is normal for short conversations — OpenAI-compatible servers only cache a
 prompt prefix of about 1024 tokens, so a hit usually shows up after a few turns
 or once a cut is in the history.
+
+### Reasoning effort
+
+Some models (`gpt-5`-style, `Qwen3`, R1 distills) accept a `reasoning_effort`
+field that trades latency for thinking. The dropdown in the footer picks it:
+
+| Level | Sent as | When it makes sense |
+| --- | --- | --- |
+| `low` | `"reasoning_effort": "low"` | translations and grammar fixes, where speed matters |
+| `medium` | `"reasoning_effort": "medium"` | the default, a balanced answer |
+| `high` | `"reasoning_effort": "high"` | explaining a diagram or a stack trace |
+| `xhigh` | `"reasoning_effort": "xhigh"` | hard debugging, at the cost of a slow reply |
+
+- The choice is stored in `settings.json`, so it survives a restart;
+  `medium` is used until you pick something else. The General settings page has
+  the same dropdown.
+- It only applies to the next turn you send: providers are rebuilt per turn, so
+  the change needs no restart. `chinchilla doctor --verbose` prints the level
+  it will use (`effort: medium`).
+- Only OpenAI-compatible endpoints receive the field (OpenAI, OpenRouter,
+  custom/vLLM, and Anthropic is left untouched because its API has no such
+  parameter). A server that rejects it with a 400 is retried once without it,
+  so an older vLLM or llama.cpp build still answers.
+- A reasoning model can spend its whole `max_tokens` budget thinking and return
+  empty `content`; Chinchilla then shows a short note instead of a blank answer.
+  Lower the effort or use a model that answers directly.
 
 ### The capture flow
 

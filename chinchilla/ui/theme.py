@@ -239,6 +239,30 @@ button.foot-btn {{
 }}
 button.foot-btn:hover {{ border-color: #3a4354; color: {TEXT}; }}
 button.foot-btn.primary {{ background-color: {ACCENT_HEX}; border-color: {ACCENT_HEX}; color: #14161a; font-weight: 600; }}
+combobox.effort-combo {{
+  background-image: none;
+  background-color: #1f252f;
+  border: 1px solid #2c3340;
+  border-radius: 5px;
+  color: #c3cad8;
+  font-size: 10px;
+  padding: 0 2px;
+  min-height: 18px;
+}}
+combobox.effort-combo:hover {{ border-color: #3a4354; }}
+combobox.effort-combo button {{
+  background-image: none;
+  background-color: transparent;
+  border: none;
+  border-radius: 5px;
+  color: #c3cad8;
+  font-size: 10px;
+  padding: 0 4px;
+  min-height: 0;
+  box-shadow: none;
+  outline: none;
+}}
+combobox.effort-combo arrow {{ color: {TEXT_MUTED}; min-width: 9px; min-height: 9px; }}
 
 /* ----------------------------------------------------------- generic bits */
 label.muted-label {{ color: {TEXT_MUTED}; font-size: 10.5px; }}

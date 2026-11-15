@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..core.search import host_of
+from ..store import config
 from ..core.thread import Capture, Source, Turn, Usage
 from . import theme
 from .gtk import Gdk, GdkPixbuf, GLib, Gtk, Pango
@@ -171,6 +172,7 @@ class PanelContent(Gtk.Box):
         on_close: Callable[[], None] | None = None,
         on_retry: Callable[[], None] | None = None,
         on_stop: Callable[[], None] | None = None,
+        on_effort: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.set_name("chinchilla-panel")
@@ -186,6 +188,8 @@ class PanelContent(Gtk.Box):
         self.on_close = on_close
         self.on_retry = on_retry
         self.on_stop = on_stop
+        self.on_effort = on_effort
+        self._loading_effort = False
 
         self._actions = list(actions or DEFAULT_ACTIONS)
         self._captures: list[Capture] = []
@@ -421,6 +425,17 @@ class PanelContent(Gtk.Box):
         self.provider_label.get_style_context().add_class("foot-text")
         foot.pack_start(self.provider_label, False, False, 0)
 
+        self.effort_combo = Gtk.ComboBoxText()
+        for level in config.REASONING_EFFORTS:
+            self.effort_combo.append(level, level)
+        self._loading_effort = True
+        self.effort_combo.set_active_id(config.DEFAULT_REASONING)
+        self._loading_effort = False
+        self.effort_combo.set_tooltip_text("Reasoning effort sent to the model")
+        self.effort_combo.get_style_context().add_class("effort-combo")
+        self.effort_combo.connect("changed", self._on_effort_changed)
+        foot.pack_start(self.effort_combo, False, False, 0)
+
         self.status_label = Gtk.Label(label="")
         self.status_label.set_xalign(0)
         self.status_label.set_ellipsize(Pango.EllipsizeMode.END)
@@ -567,6 +582,25 @@ class PanelContent(Gtk.Box):
         self._streaming_text = ""
         self.set_busy(False)
         self.scroll_to_bottom()
+
+    def set_effort(self, value: str) -> None:
+        """Select the effort without echoing it back to the app."""
+        if value not in config.REASONING_EFFORTS:
+            value = config.DEFAULT_REASONING
+        if self.effort_combo.get_active_id() == value:
+            return
+        self._loading_effort = True
+        self.effort_combo.set_active_id(value)
+        self._loading_effort = False
+
+    def effort_value(self) -> str:
+        return self.effort_combo.get_active_id() or config.DEFAULT_REASONING
+
+    def _on_effort_changed(self, _combo) -> None:
+        if self._loading_effort:
+            return
+        if self.on_effort is not None:
+            self.on_effort(self.effort_value())
 
     def set_status(self, text: str, kind: str = "info") -> None:
         styles = {"info": "", "error": "error-text", "busy": "busy-text"}

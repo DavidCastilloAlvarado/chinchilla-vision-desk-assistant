@@ -14,8 +14,10 @@ from typing import Any, Iterable, Iterator
 
 import httpx
 
+from .. import log
 from ..store import config
 
+LOGGER = log.get("llm")
 DEFAULT_TIMEOUT = 120.0
 ANTHROPIC_VERSION = "2023-06-01"
 
@@ -133,6 +135,7 @@ class OpenAICompatible:
         client: httpx.Client | None = None,
         temperature: float = 0.2,
         max_tokens: int = 1400,
+        reasoning_effort: str = "",
     ) -> None:
         base_url = normalise_base_url(base_url)
         if not base_url:
@@ -147,6 +150,8 @@ class OpenAICompatible:
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.reasoning_effort = (reasoning_effort or "").strip().lower()
+        self._drop_reasoning = False
         self._client = client
         self.last_usage: dict[str, int] = {}
 
@@ -173,6 +178,8 @@ class OpenAICompatible:
         }
         if stream:
             payload["stream_options"] = {"include_usage": True}
+        if self.reasoning_effort and not self._drop_reasoning:
+            payload["reasoning_effort"] = self.reasoning_effort
         if tools:
             payload["tools"] = [
                 {
@@ -227,6 +234,32 @@ class OpenAICompatible:
         messages: list[Message],
         tools: list[ToolSpec] | None = None,
         stream: bool = True,
+    ) -> Iterator[Chunk]:
+        """Stream one completion, dropping `reasoning_effort` if the server refuses it."""
+        emitted = False
+        try:
+            for chunk in self._chat_payload(messages, tools, stream):
+                emitted = True
+                yield chunk
+        except ProviderError as exc:
+            if emitted or not self._refused_reasoning(exc):
+                raise
+            LOGGER.warning("%s: retrying without reasoning_effort (%s)", self.id, exc)
+            self._drop_reasoning = True
+            for chunk in self._chat_payload(messages, tools, stream):
+                yield chunk
+
+    def _refused_reasoning(self, exc: ProviderError) -> bool:
+        if not self.reasoning_effort or self._drop_reasoning:
+            return False
+        message = str(exc).lower()
+        return "reasoning_effort" in message or "reasoning effort" in message
+
+    def _chat_payload(
+        self,
+        messages: list[Message],
+        tools: list[ToolSpec] | None,
+        stream: bool,
     ) -> Iterator[Chunk]:
         payload = self._payload(messages, tools, stream)
         if not stream:
@@ -510,4 +543,5 @@ def build_provider(settings: config.Settings, client: httpx.Client | None = None
         api_key=key,
         model=provider.model,
         client=client,
+        reasoning_effort=settings.reasoning_effort,
     )

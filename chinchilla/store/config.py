@@ -118,6 +118,8 @@ def resolved_mcp(settings: "Settings") -> tuple[list[str], dict[str, str]]:
 DEFAULT_LANGUAGE = "Spanish"
 DEFAULT_LEVEL = "B1"
 DEFAULT_MAX_SIDE = 1400
+REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
+DEFAULT_REASONING = "medium"
 
 
 @dataclass
@@ -170,6 +172,7 @@ class Settings:
     save_sessions: bool = True
     retention_days: int = 0
     max_side: int = DEFAULT_MAX_SIDE
+    reasoning_effort: str = DEFAULT_REASONING
     panel_width: int = 404
     hotkey: str = "<Control><Alt>a"
     mcp_command: list[str] = field(default_factory=default_mcp_command)
@@ -209,6 +212,7 @@ class Settings:
             "save_sessions": self.save_sessions,
             "retention_days": self.retention_days,
             "max_side": self.max_side,
+            "reasoning_effort": self.reasoning_effort,
             "panel_width": self.panel_width,
             "hotkey": self.hotkey,
             "mcp_command": list(self.mcp_command),
@@ -249,6 +253,9 @@ class Settings:
             existing.prompt = values.get("prompt", existing.prompt)
             existing.web_default = bool(values.get("web_default", existing.web_default))
 
+        effort = data.get("reasoning_effort")
+        if isinstance(effort, str) and effort.strip().lower() in REASONING_EFFORTS:
+            settings.reasoning_effort = effort.strip().lower()
         for key in ("language", "level", "hotkey"):
             value = data.get(key)
             if isinstance(value, str) and value.strip():

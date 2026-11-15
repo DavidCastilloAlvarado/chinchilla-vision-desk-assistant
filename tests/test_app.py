@@ -470,3 +470,25 @@ def test_retry_keeps_a_single_question_when_the_answer_stopped(xdg):
     questions = [turn.text for turn in app.session.turns if turn.role == "user"]
     assert questions == ["keep this question"]
     assert len(provider.seen) == 3
+
+
+def test_the_effort_choice_is_saved_and_shown(xdg):
+    app, _provider = _app()
+    assert app.window.content.effort_value() == "medium"
+
+    app.set_reasoning_effort("xhigh")
+
+    assert app.settings.reasoning_effort == "xhigh"
+    assert config.load_settings().reasoning_effort == "xhigh"
+    assert "xhigh" in app.window.content.status_label.get_text()
+
+    app.new_session()
+    assert app.window.content.effort_value() == "xhigh"
+
+
+def test_an_unknown_effort_is_ignored(xdg):
+    app, _provider = _app()
+
+    app.set_reasoning_effort("turbo")
+
+    assert app.settings.reasoning_effort == "medium"

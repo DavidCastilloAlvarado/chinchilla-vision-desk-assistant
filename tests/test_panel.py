@@ -315,3 +315,31 @@ def test_the_header_buttons_carry_their_own_size_and_colour():
 
     assert content.close_button.get_style_context().has_class("icon-close")
     assert content.settings_button.get_style_context().has_class("icon-gear")
+
+
+def test_the_effort_combo_offers_the_four_levels_and_starts_medium():
+    content = PanelContent()
+    assert content.effort_value() == "medium"
+    ids = [row[0] for row in content.effort_combo.get_model()]
+    assert ids == ["low", "medium", "high", "xhigh"]
+
+
+def test_set_effort_does_not_echo_back_to_the_app():
+    chosen = []
+    content = PanelContent(on_effort=chosen.append)
+    content.set_effort("high")
+    assert content.effort_value() == "high"
+    assert chosen == []
+
+
+def test_picking_an_effort_reports_it():
+    chosen = []
+    content = PanelContent(on_effort=chosen.append)
+    content.effort_combo.set_active_id("xhigh")
+    assert chosen == ["xhigh"]
+
+
+def test_an_unknown_effort_falls_back_to_the_default():
+    content = PanelContent()
+    content.set_effort("turbo")
+    assert content.effort_value() == "medium"
