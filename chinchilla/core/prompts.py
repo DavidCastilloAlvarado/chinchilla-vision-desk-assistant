@@ -20,6 +20,16 @@ WEB_PROMPT = (
     "Only cite sources you actually opened."
 )
 
+FINAL_ANSWER_PROMPT = (
+    "Search budget reached. Answer now with the information you already have, "
+    "without calling more tools, and cite the pages you used as [1], [2]."
+)
+
+EMPTY_ANSWER = (
+    "The model sent no text for this turn. Press Retry, or ask again with more "
+    "detail."
+)
+
 DEFAULT_ACTIONS: list[dict] = [
     {
         "id": "translate",

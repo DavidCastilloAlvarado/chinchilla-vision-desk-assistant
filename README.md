@@ -527,10 +527,14 @@ server's own tools:
 | `search_and_fetch` | search, then read the top N pages in one call |
 | `login` / `account` | optional Google sign-in, kept in the search profile |
 
-A turn may make **4 tool calls within 20 seconds**. Sources come back as a
-numbered list under the answer and the text cites them as `[1]`, `[2]`. The
-**Web** toggle is stored per session, so a conversation can be kept offline while
-others search.
+A turn may make **6 tool calls within 150 seconds** (a single call gets 60
+seconds), and when the budget runs out the agent still answers: it gets one last
+tool-less round with everything it has already read, so a long search never ends
+in an empty bubble. Sources come back as a numbered list under the answer —
+click a source to open it in your browser, or select its text — and the reply
+cites them as `[1]`, `[2]`. Result pages, stylesheets and scraped CSS are
+filtered out, so the list only holds pages you can open. The **Web** toggle is
+stored per session, so a conversation can be kept offline while others search.
 
 Setup, the profile layout and the CAPTCHA behaviour are in
 [Installation step 5](#5-web-search).

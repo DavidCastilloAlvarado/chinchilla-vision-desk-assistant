@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .. import log
 from ..store import config
@@ -24,11 +25,55 @@ from .thread import Source
 
 LOGGER = log.get("search")
 PROTOCOL_VERSION = "2024-11-05"
-MAX_TOOL_CALLS = 4
-TOOL_DEADLINE = 20.0
+# A browsing turn is allowed to take a while: dropping the answer because the
+# second search needed ten more seconds is worse than waiting.
+MAX_TOOL_CALLS = 6
+TOOL_DEADLINE = 150.0
+CALL_TIMEOUT = 60.0
+SOURCE_LIMIT = 10
 
-_MD_LINK = re.compile(r"\[([^\]]{1,120})\]\((https?://[^)\s]+)\)")
+_MD_LINK = re.compile(r"\[([^\]]{1,160})\]\((https?://[^)\s]+)\)")
 _URL = re.compile(r"https?://[^\s<>\)\]\"']+")
+_LIST_ITEM = re.compile(r"^\s*(?:\d{1,2}[.)]|[-*+])\s+(?P<body>\S.*?)\s*$")
+_BARE_URL = re.compile(r"^<?(?P<url>https?://[^\s<>]+?)>?\s*$")
+_MARKUP = re.compile(r"</?(?:b|i|em|strong|span|code|tt|small|big|a|p|br|div)\b[^>]*>", re.I)
+
+# Result pages and asset hosts show up in scraped text but are not sources.
+_NOT_A_SOURCE_HOSTS = {
+    "google.com",
+    "www.google.com",
+    "news.google.com",
+    "lens.google.com",
+    "www.bing.com",
+    "bing.com",
+    "duckduckgo.com",
+    "html.duckduckgo.com",
+    "search.yahoo.com",
+    "schema.org",
+    "fonts.googleapis.com",
+}
+_NOT_A_SOURCE_PATHS = (
+    "/2000/svg",
+    "/1999/xlink",
+    "/2000/xmlns",
+    "/xml/1998/namespace",
+)
+_ASSET_SUFFIXES = (
+    ".css",
+    ".js",
+    ".mjs",
+    ".map",
+    ".svg",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+)
 
 
 class MCPError(RuntimeError):
@@ -42,7 +87,7 @@ class MCPClient:
         self,
         command: list[str],
         env: dict[str, str] | None = None,
-        timeout: float = TOOL_DEADLINE,
+        timeout: float = CALL_TIMEOUT,
     ) -> None:
         self.command = list(command)
         self.env = dict(env or {})
@@ -167,29 +212,109 @@ class SearchResult:
     ok: bool = True
 
 
-def extract_sources(text: str, limit: int = 6) -> list[Source]:
-    """Pull downloadable URLs out of whatever the server printed."""
+def clean_url(url: str) -> str:
+    return (url or "").strip().strip("<>").rstrip(".,;:)]}\"'")
+
+
+def is_source_url(url: str) -> bool:
+    """A real page the user can open, not a stylesheet or a search results page."""
+    url = clean_url(url)
+    if not url.startswith(("http://", "https://")):
+        return False
+    parts = urlparse(url)
+    host = _bare_host(parts.netloc)
+    if not host or host in _NOT_A_SOURCE_HOSTS:
+        return False
+    path = parts.path.lower()
+    if path.endswith(_ASSET_SUFFIXES):
+        return False
+    return not any(path.startswith(prefix) for prefix in _NOT_A_SOURCE_PATHS)
+
+
+def clean_title(title: str) -> str:
+    """Strip the numbering, the `(source:` markers and any scraped CSS/HTML."""
+    text = _MARKUP.sub(" ", title or "")
+    text = re.sub(r"^[\s#>*\-–—]+", "", text)
+    text = re.sub(r"^\(?\s*source\s*:\s*", "", text, flags=re.IGNORECASE)
+    text = text.strip("()[]<>\"'`*_ ")
+    if not text or "{" in text or "}" in text or ":root" in text or "var(--" in text:
+        return ""
+    text = re.sub(r"\s+", " ", text)
+    if len(text) > 160:
+        text = text[:157].rstrip() + "..."
+    return text
+
+
+def host_of(url: str) -> str:
+    try:
+        return urlparse(clean_url(url)).netloc.lower()
+    except ValueError:
+        return ""
+
+
+def _bare_host(netloc: str) -> str:
+    host = (netloc or "").lower().split(":")[0]
+    return host[4:] if host.startswith("www.") else host
+
+
+def extract_sources(text: str, limit: int = SOURCE_LIMIT) -> list[Source]:
+    """Pull the result list out of whatever the server printed.
+
+    The server answers with numbered results (`1. Title` then `   https://...`),
+    markdown links, or bare URLs. Anything that is not an openable page (search
+    engines, stylesheets, scraped CSS) is skipped instead of being listed as a
+    source, and a title is never the URL when the page has one.
+    """
     sources: list[Source] = []
     seen: set[str] = set()
+
+    def add(title: str, url: str) -> None:
+        url = clean_url(url)
+        if len(sources) >= limit or url in seen or not is_source_url(url):
+            return
+        seen.add(url)
+        sources.append(Source(title=clean_title(title) or host_of(url) or url, url=url))
+
+    lines = (text or "").splitlines()
+    for index, line in enumerate(lines):
+        item = _LIST_ITEM.match(line)
+        if item is None:
+            continue
+        body = item.group("body")
+        link = _MD_LINK.search(body)
+        if link is not None:
+            add(link.group(1), link.group(2))
+            continue
+        inline = _URL.search(body)
+        if inline is not None and inline.start() == 0:
+            add(body[inline.end() :], inline.group(0))
+            continue
+        following = lines[index + 1].strip() if index + 1 < len(lines) else ""
+        bare = _BARE_URL.match(following)
+        if bare is not None:
+            add(body, bare.group("url"))
+
     for match in _MD_LINK.finditer(text or ""):
-        title, url = match.group(1).strip(), match.group(2).strip()
-        if url in seen:
-            continue
-        seen.add(url)
-        sources.append(Source(title=title, url=url))
-        if len(sources) >= limit:
-            return sources
+        add(match.group(1), match.group(2))
+    for index, line in enumerate(lines):
+        bare = _BARE_URL.match(line.strip())
+        if bare is not None:
+            add(_title_above(lines, index), bare.group("url"))
     for match in _URL.finditer(text or ""):
-        url = match.group(0).rstrip(".,;:")
-        if url in seen:
-            continue
-        seen.add(url)
-        line_start = text.rfind("\n", 0, match.start()) + 1
-        title = text[line_start : match.start()].strip(" -|\t")[:80] or url
-        sources.append(Source(title=title, url=url))
-        if len(sources) >= limit:
-            break
+        line_start = (text or "").rfind("\n", 0, match.start()) + 1
+        add((text or "")[line_start : match.start()], match.group(0))
     return sources
+
+
+def _title_above(lines: list[str], index: int) -> str:
+    for previous in range(index - 1, -1, -1):
+        candidate = lines[previous].strip()
+        if not candidate:
+            continue
+        if _BARE_URL.match(candidate) or _URL.search(candidate):
+            continue
+        return candidate
+    return ""
 
 
 def scrub_citations(text: str, sources: list[Source]) -> str:

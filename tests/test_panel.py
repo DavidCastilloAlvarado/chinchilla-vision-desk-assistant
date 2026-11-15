@@ -233,3 +233,76 @@ def test_the_web_chip_keeps_its_knob_inside_the_track():
 
     assert chip._knob.get_parent() is chip._track
     assert len(chip._track.get_children()) == 1
+
+
+def _labels(widget):
+    from chinchilla.ui.gtk import Gtk
+
+    found = [widget] if isinstance(widget, Gtk.Label) else []
+    if isinstance(widget, Gtk.Container):
+        for child in widget.get_children():
+            found.extend(_labels(child))
+    return found
+
+
+def _sources_labels(content):
+    return [
+        label
+        for label in _labels(content)
+        if label.get_style_context().has_class("source-label")
+    ]
+
+
+def test_sources_are_clickable_links_with_a_host_hint():
+    from chinchilla.core.thread import Source, Turn
+    from chinchilla.ui.panel import PanelContent
+
+    content = PanelContent()
+    content.add_turn(
+        Turn(
+            role="assistant",
+            text="see [1]",
+            sources=[
+                Source(
+                    title="S&P 500 Index Technical Analysis",
+                    url="https://www.barchart.com/stocks/quotes/%24SPX/technical-analysis",
+                )
+            ],
+        )
+    )
+
+    labels = _sources_labels(content)
+    assert len(labels) == 1
+    markup = labels[0].get_label()
+    assert '<a href="https://www.barchart.com/stocks/quotes/%24SPX/technical-analysis">' in markup
+    assert "1. S&amp;P 500 Index Technical Analysis" in markup
+    assert "www.barchart.com" in markup
+    assert labels[0].get_selectable() is True
+
+
+def test_a_source_without_a_title_is_not_repeated_twice():
+    from chinchilla.core.thread import Source
+    from chinchilla.ui.panel import source_markup
+
+    markup = source_markup(2, Source(title="finance.yahoo.com", url="https://finance.yahoo.com/q"))
+
+    assert markup.endswith("</a>")
+    assert "+00b7" not in markup and "\u00b7" not in markup
+
+
+def test_the_link_handler_ignores_anything_but_http():
+    from chinchilla.core.thread import Source, Turn
+    from chinchilla.ui.panel import PanelContent
+
+    content = PanelContent()
+    content.add_turn(
+        Turn(
+            role="assistant",
+            text="x",
+            sources=[Source(title="Docs", url="https://example.com/docs")],
+        )
+    )
+    label = _sources_labels(content)[0]
+
+    assert label.emit("activate-link", "file:///etc/passwd") is True
+    assert label.emit("activate-link", "javascript:alert(1)") is True

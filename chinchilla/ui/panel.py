@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from ..core.search import host_of
 from ..core.thread import Capture, Source, Turn, Usage
 from . import theme
 from .gtk import Gdk, GdkPixbuf, GLib, Gtk, Pango
@@ -49,6 +50,21 @@ def to_pango(text: str) -> str:
 
 def clock(timestamp: float) -> str:
     return time.strftime("%H:%M", time.localtime(timestamp))
+
+
+def source_markup(index: int, source: Source) -> str:
+    """`1. title · host`, with the title as a link the user can click or select."""
+    title = html.escape(source.title or source.url or "source")
+    if not source.url:
+        return f"{index}. {title}"
+    url = html.escape(source.url, quote=True)
+    link = f'<a href="{url}">{index}. {title}</a>'
+    host = host_of(source.url)
+    if not host or host.lower() == (source.title or "").strip().lower():
+        return link
+    return (
+        f'{link}<span size="small" foreground="#6f7a8e"> \u00b7 {html.escape(host)}</span>'
+    )
 
 
 def short_count(tokens: int) -> str:
@@ -729,7 +745,7 @@ class PanelContent(Gtk.Box):
     def _sources_block(self, sources: list[Source]) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         box.set_margin_top(5)
-        head = Gtk.Label(label="SOURCES")
+        head = Gtk.Label(label=f"SOURCES \u00b7 {len(sources)}")
         head.set_xalign(0)
         head.get_style_context().add_class("sources-head")
         box.pack_start(head, False, False, 0)
@@ -737,12 +753,26 @@ class PanelContent(Gtk.Box):
             label = Gtk.Label()
             label.set_xalign(0)
             label.set_line_wrap(True)
-            label.set_markup(f"{index}. {html.escape(source.title or source.url)}")
+            label.set_selectable(True)
+            label.set_markup(source_markup(index, source))
             label.get_style_context().add_class("source-label")
             if source.url:
-                label.set_tooltip_text(source.url)
+                label.set_tooltip_text(f"Open {source.url}")
+                label.connect("activate-link", self._on_source_link)
             box.pack_start(label, False, False, 0)
         return box
+
+    def _on_source_link(self, _label: Gtk.Label, uri: str) -> bool:
+        """Open the cited page in the user's browser; never let GTK guess."""
+        if not uri.startswith(("http://", "https://")):
+            return True
+        toplevel = self.get_toplevel()
+        window = toplevel if isinstance(toplevel, Gtk.Window) else None
+        try:
+            Gtk.show_uri_on_window(window, uri, Gtk.get_current_event_time())
+        except GLib.Error as exc:  # pragma: no cover - no handler installed
+            self.set_status(f"cannot open the link: {exc.message}", "error")
+        return True
 
     # ------------------------------------------------------------------ events
 

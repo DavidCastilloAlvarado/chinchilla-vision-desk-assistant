@@ -150,6 +150,66 @@ def test_search_budget_is_enforced(session, monkeypatch):
     assert any("budget" in text for text in notices)
 
 
+def test_the_answer_is_asked_again_without_tools_when_the_budget_runs_out(session, monkeypatch):
+    settings = make_settings(web_enabled=True)
+    session.web_enabled = True
+    monkeypatch.setattr(search, "MAX_TOOL_CALLS", 1)
+    provider = FakeProvider(
+        [
+            llm.Chunk(
+                "tool_call",
+                tool_call=llm.ToolCall("c1", "search", {"query": "sp500"}),
+            )
+        ],
+        [
+            llm.Chunk(
+                "tool_call",
+                tool_call=llm.ToolCall("c2", "search", {"query": "sp500 ma50"}),
+            )
+        ],
+        [llm.Chunk("text", text="Esta sobre la MA200."), llm.Chunk("done")],
+    )
+    agent = agent_module.Agent(session, settings, provider=provider)
+    events = list(agent.run(Turn(role="user", text="trend?")))
+
+    assert session.turns[-1].role == "assistant"
+    assert session.turns[-1].text == "Esta sobre la MA200."
+    assert any(event.type == "notice" and "budget" in event.text for event in events)
+    # the turn never ends on a tool call, and the last call is tool-less
+    assert provider.calls[-1]["tools"] is None
+    assert any(event.type == "sources" for event in events)
+
+
+def test_a_skipped_tool_call_still_gets_a_tool_message(session, monkeypatch):
+    settings = make_settings(web_enabled=True)
+    session.web_enabled = True
+    monkeypatch.setattr(search, "MAX_TOOL_CALLS", 0)
+    provider = FakeProvider(
+        [llm.Chunk("tool_call", tool_call=llm.ToolCall("c1", "search", {"query": "a"}))],
+        [llm.Chunk("text", text="sin busqueda"), llm.Chunk("done")],
+    )
+    agent = agent_module.Agent(session, settings, provider=provider)
+    list(agent.run(Turn(role="user", text="q")))
+
+    tool_messages = [
+        message for message in provider.calls[-1]["messages"] if message.role == "tool"
+    ]
+    assert tool_messages and tool_messages[0].tool_call_id == "c1"
+    assert "budget" in tool_messages[0].text
+    assert session.turns[-1].text == "sin busqueda"
+
+
+def test_an_empty_answer_is_never_saved_as_an_empty_turn(session):
+    settings = make_settings()
+    provider = FakeProvider([llm.Chunk("done")])
+    agent = agent_module.Agent(session, settings, provider=provider)
+
+    list(agent.run(Turn(role="user", text="hello")))
+
+    assert session.turns[-1].text.strip()
+    assert "no text" in session.turns[-1].text
+
+
 def test_text_only_turns_are_sent_without_images(session):
     settings = make_settings()
     provider = FakeProvider([llm.Chunk("text", text="sure"), llm.Chunk("done")])

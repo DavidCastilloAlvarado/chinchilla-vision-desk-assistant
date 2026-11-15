@@ -70,6 +70,60 @@ def test_sources_limit_and_dedupe():
     assert [source.url for source in sources] == ["https://a.test", "https://b.test"]
 
 
+DSH_OUTPUT = """Google search results for: S&P 500 50-day moving average
+(source: https://www.google.com/search?q=S%26P+500+50-day&hl=en&gl=us&num=15&ie=UTF-8)
+
+Organic results:
+1. S&P 500 Index Technical Analysis
+   https://www.barchart.com/stocks/quotes/%24SPX/technical-analysis
+   500 Index with Moving Average, 50-Day 7,667.46 -186.04 -2.40%
+2. S&P 500 Index Advanced Charts - SPX
+   https://www.marketwatch.com/investing/index/spx/charts
+   S&P 500 Index advanced index charts by MarketWatch.
+:root{--COEmY:var(--YLNNHc);--xhUGwc:#22242a} https://www.w3.org/2000/svg
+"""
+
+
+def test_real_result_blocks_become_titled_sources():
+    sources = search.extract_sources(DSH_OUTPUT)
+
+    assert [(s.title, s.url) for s in sources] == [
+        (
+            "S&P 500 Index Technical Analysis",
+            "https://www.barchart.com/stocks/quotes/%24SPX/technical-analysis",
+        ),
+        (
+            "S&P 500 Index Advanced Charts - SPX",
+            "https://www.marketwatch.com/investing/index/spx/charts",
+        ),
+    ]
+
+
+def test_search_pages_and_assets_are_never_listed_as_sources():
+    text = (
+        "1. Some page\n   https://example.com/page\n"
+        "(source: https://www.google.com/search?q=hello)\n"
+        "https://www.w3.org/2000/svg\n"
+        "https://example.org/styles.css\n"
+    )
+    sources = search.extract_sources(text)
+
+    assert [source.url for source in sources] == ["https://example.com/page"]
+    assert all(s.title != "(source:" for s in sources)
+
+
+def test_a_url_without_a_title_falls_back_to_its_host():
+    sources = search.extract_sources("https://finance.yahoo.com/quote/%5EGSPC/history/")
+    assert sources[0].title == "finance.yahoo.com"
+
+
+def test_more_results_are_kept_than_the_old_six_cap():
+    text = "\n".join(
+        f"{index}. result {index}\n   https://example.com/{index}" for index in range(1, 10)
+    )
+    assert len(search.extract_sources(text)) == 9
+
+
 def test_citations_are_scrubbed_when_out_of_range():
     sources = [search.Source(title="one", url="https://a.test")]
     assert search.scrub_citations("see [1] and [2] and [0]", sources) == "see [1] and  and "

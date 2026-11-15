@@ -14,8 +14,12 @@ from . import llm, prompts, search
 from .thread import Source, Turn, Usage
 
 LOGGER = log.get("agent")
-MAX_ROUNDS = 3
+MAX_ROUNDS = 4
 MAX_IMAGES = 4
+SEARCH_SKIPPED = (
+    "search skipped: the tool budget for this turn is spent. Answer with the "
+    "results you already have."
+)
 
 
 @dataclass
@@ -148,7 +152,8 @@ class Agent:
         usage = Usage()
 
         try:
-            for _round in range(MAX_ROUNDS):
+            rounds_left = MAX_ROUNDS
+            while True:
                 round_text = ""
                 tool_calls: list[llm.ToolCall] = []
                 for chunk in self.provider.chat(messages, tools=tools or None):
@@ -170,18 +175,31 @@ class Agent:
                         tool_calls=[call.as_openai() for call in tool_calls],
                     )
                 )
+                skipped = 0
                 for call in tool_calls:
                     if not budget.take():
-                        yield AgentEvent(
-                            "notice",
-                            text="search budget reached, answering with what we have",
+                        skipped += 1
+                        # every call needs an answer, or strict providers reject the round
+                        messages.append(
+                            llm.Message(
+                                "tool",
+                                SEARCH_SKIPPED,
+                                tool_call_id=call.id,
+                                tool_name=call.name,
+                            )
                         )
-                        final_text += "\n\n(stopped searching to stay within budget)"
-                        tool_calls = []
-                        break
+                        continue
                     yield AgentEvent("tool", tool=call.name, detail=_describe(call))
                     result = self._web.call(call.name, call.arguments) if self._web else None
                     if result is None:
+                        messages.append(
+                            llm.Message(
+                                "tool",
+                                "the search returned nothing",
+                                tool_call_id=call.id,
+                                tool_name=call.name,
+                            )
+                        )
                         continue
                     if result.sources:
                         collected.extend(result.sources)
@@ -193,10 +211,25 @@ class Agent:
                             tool_name=call.name,
                         )
                     )
-                if not tool_calls:
-                    break
-            else:
-                yield AgentEvent("notice", text="stopped after several tool rounds")
+                rounds_left -= 1
+                if skipped:
+                    yield AgentEvent(
+                        "notice",
+                        text="search budget reached, answering with what we have",
+                    )
+                if not skipped and rounds_left > 0:
+                    continue
+                # Never end a turn on a tool call: ask for the answer without tools.
+                messages.append(llm.Message("system", prompts.FINAL_ANSWER_PROMPT))
+                for chunk in self.provider.chat(messages, tools=None):
+                    if chunk.type == "text" and chunk.text:
+                        final_text += chunk.text
+                        yield AgentEvent("text", text=chunk.text)
+                    elif chunk.type == "usage":
+                        usage.add(Usage.from_payload(chunk.usage))
+                if not rounds_left:
+                    yield AgentEvent("notice", text="stopped after several tool rounds")
+                break
         except llm.ProviderError as exc:
             turn.text = str(exc)
             turn.error = True
@@ -210,9 +243,10 @@ class Agent:
                 self._web = None
 
         sources = _unique_sources(collected)
+        answer = search.scrub_citations(final_text.strip(), sources) or prompts.EMPTY_ANSWER
         assistant = Turn(
             role="assistant",
-            text=search.scrub_citations(final_text.strip(), sources),
+            text=answer,
             sources=sources,
             usage=None if usage.is_empty else usage,
         )
