@@ -12,10 +12,23 @@ from PIL import Image
 from .gtk import Gdk, GdkPixbuf, GLib, Gtk
 
 from ..core.geometry import Rect, clamp, from_points, is_usable, nudge
+from .. import system
 from . import paint, theme
 
 VEIL = (0.02, 0.03, 0.05, 0.44)
 HINT = "Drag to select  |  arrows nudge  |  Enter confirm  |  Esc cancel"
+
+
+def screen_size() -> tuple[int, int]:
+    """Size of the area the overlay covers, in the coordinates it reports.
+
+    The selection is in logical points while the frozen frame is in pixels
+    (twice as many on a Retina or 200% display), so crops scale between both.
+    """
+    display = Gdk.Display.get_default()
+    monitor = display.get_primary_monitor() or display.get_monitor(0)
+    geometry = monitor.get_geometry()
+    return geometry.width, geometry.height
 
 
 class SelectionOverlay(Gtk.Window):
@@ -110,8 +123,19 @@ class SelectionOverlay(Gtk.Window):
         self.move(self._screen.x, self._screen.y)
         self._repaint()
         self.show_all()
-        self.fullscreen()
-        self.present()
+        if system.is_mac():
+            # fullscreen() on Quartz slides into a new Space; a borderless
+            # window the size of the display lifted above the menu bar and the
+            # Dock behaves like the system selector instead
+            from ..macos import cocoa
+
+            self.resize(self._screen.width, self._screen.height)
+            cocoa.activate()
+            self.present()
+            cocoa.raise_window(self, cocoa.LEVEL_SCREEN_SAVER, all_spaces=True)
+        else:
+            self.fullscreen()
+            self.present()
         self._set_cursor()
         self._grab_seat()
 

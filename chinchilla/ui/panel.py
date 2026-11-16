@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from .. import system
 from ..core.search import host_of
 from ..store import config
 from ..core.thread import Capture, Source, Turn, Usage
@@ -908,6 +909,15 @@ class PanelContent(Gtk.Box):
         self.on_send(text)
 
 
+def _primary_mask() -> Gdk.ModifierType:
+    """Command on macOS, Control elsewhere; the panel accepts both."""
+    display = Gdk.Display.get_default()
+    if display is None:
+        return Gdk.ModifierType.CONTROL_MASK
+    keymap = Gdk.Keymap.get_for_display(display)
+    return keymap.get_modifier_mask(Gdk.ModifierIntent.PRIMARY_ACCELERATOR)
+
+
 class PanelWindow(Gtk.Window):
     """Frameless always on top window that hosts the panel."""
 
@@ -951,7 +961,7 @@ class PanelWindow(Gtk.Window):
         return isinstance(focused, (Gtk.Entry, Gtk.TextView))
 
     def _on_key(self, _widget, event) -> bool:
-        ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
+        ctrl = bool(event.state & (Gdk.ModifierType.CONTROL_MASK | _primary_mask()))
         content = self.content
         if self._escape(event):
             return True
@@ -1016,6 +1026,10 @@ class PanelWindow(Gtk.Window):
         self.place(screen_width, screen_height)
         self.show_all()
         self.present_with_time(Gdk.CURRENT_TIME)
+        if system.is_mac():
+            from ..macos import cocoa
+
+            cocoa.keep_visible(self)
         self.grab_focus()
 
 
