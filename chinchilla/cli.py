@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import __version__, paths
+from . import __version__, paths, system
 from .shortcuts import DEFAULT_BINDING
 
 
@@ -41,12 +41,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     results.append(_check("python", sys.version.split()[0], sys.version_info >= (3, 10)))
     gtk = _gtk_version()
     results.append(_check("gtk", gtk, not gtk.startswith("missing")))
-    display = ", ".join(
-        f"{key}={os.environ[key]}"
-        for key in ("GDK_BACKEND", "DISPLAY", "WAYLAND_DISPLAY")
-        if os.environ.get(key)
-    )
-    results.append(_check("session", display or "headless", bool(display)))
+    if system.is_mac():
+        import platform
+
+        results.append(_check("session", f"macOS {platform.mac_ver()[0]} (quartz)", True))
+    else:
+        display = ", ".join(
+            f"{key}={os.environ[key]}"
+            for key in ("GDK_BACKEND", "DISPLAY", "WAYLAND_DISPLAY")
+            if os.environ.get(key)
+        )
+        results.append(_check("session", display or "headless", bool(display)))
 
     try:
         paths.ensure_dirs()
@@ -105,8 +110,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     from .core import permission
 
-    # informational: the app grants itself on the first capture
-    results.append(_check("screenshot", permission.describe(), True))
+    # informational on GNOME, where the app grants itself on the first
+    # capture; on macOS only the user can grant Screen Recording
+    granted = permission.is_granted() if system.is_mac() else True
+    detail = permission.describe()
+    if not granted:
+        detail += "; until then cuts come from \u2318\u2303\u21e74 (clipboard)"
+    results.append(_check("screenshot", detail, granted))
 
     from . import shortcuts
 
@@ -212,10 +222,23 @@ def cmd_capture(args: argparse.Namespace) -> int:
             allowed, detail = permission.ensure()
             if not allowed:
                 print(f"silent screenshot unavailable: {detail}", file=sys.stderr)
+            # without Screen Recording macOS still returns a frame, with every
+            # window blanked; the user's own screenshot tool is the way in
+            mac_blind = system.is_mac() and not allowed and not os.environ.get(
+                "CHINCHILLA_CAPTURE_SOURCE"
+            )
+            if mac_blind:
+                print(f"waiting for the cut: {capture.CLIPBOARD_HINT}", file=sys.stderr)
             try:
+                if mac_blind:
+                    raise capture.CaptureError("Screen Recording is not granted")
                 grab = capture.grab_screen(args.backend)
             except capture.CaptureError:
-                grab = capture.grab_area(args.backend)
+                if mac_blind:
+                    # no other area backend: they would all return blank frames
+                    grab = capture.Grab(image=capture.grab_clipboard(), backend="clipboard")
+                else:
+                    grab = capture.grab_area(args.backend)
                 image, rect, screen_size = grab.image, None, None
             else:
                 image = grab.image
@@ -234,6 +257,8 @@ def cmd_capture(args: argparse.Namespace) -> int:
                     if rect is None:
                         print("cancelled", file=sys.stderr)
                         return 1
+                    # the overlay answers in screen points, not frame pixels
+                    screen_size = overlay.screen_size()
                 image = capture.crop(image, rect, screen_size)
     except capture.CaptureError as exc:
         print(f"capture failed: {exc}", file=sys.stderr)
@@ -559,6 +584,18 @@ def cmd_app(args: argparse.Namespace) -> int:
 
 
 def cmd_daemon(args: argparse.Namespace) -> int:
+    if system.is_mac():
+        from .macos import launchagent
+
+        # launchd names the job in XPC_SERVICE_NAME; anywhere else, a stopped
+        # agent (Quit from the menu bar) is restarted rather than duplicated
+        if os.environ.get("XPC_SERVICE_NAME") != launchagent.LABEL:
+            state = launchagent.state()
+            if state.loaded and not state.running:
+                launchagent.kickstart()
+                print("started the login agent (chinchilla shortcuts status)")
+                return 0
+
     from .ui.app import run_app
 
     return run_app([], capture=False)
@@ -579,7 +616,13 @@ def cmd_shortcuts(args: argparse.Namespace) -> int:
         return 1
     print(status.summary)
     if args.action == "install" and status.installed:
-        print("log out and back in if the shortcut does not fire")
+        if system.is_mac():
+            print(
+                "the login agent runs `chinchilla daemon`, which owns the hotkey; "
+                "grant Screen Recording to Python on the first capture"
+            )
+        else:
+            print("log out and back in if the shortcut does not fire")
     return 0 if (status.installed or args.action == "uninstall") else 1
 
 
@@ -684,7 +727,8 @@ def build_parser() -> argparse.ArgumentParser:
     daemon_parser.set_defaults(func=cmd_daemon)
 
     shortcuts_parser = sub.add_parser(
-        "shortcuts", help="install or inspect the GNOME keybinding"
+        "shortcuts",
+        help="install or inspect the capture shortcut (GNOME keybinding, macOS login agent)",
     )
     shortcuts_parser.add_argument("action", nargs="?", choices=["status", "install", "uninstall"], default="status")
     shortcuts_parser.add_argument("--binding", default=DEFAULT_BINDING, help="accelerator to bind")
