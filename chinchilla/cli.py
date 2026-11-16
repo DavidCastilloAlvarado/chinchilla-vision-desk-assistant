@@ -529,12 +529,13 @@ def cmd_copilot(args: argparse.Namespace) -> int:
     for model in models:
         print(f"  {model.id}")
     print("pick one in Settings \u203a Providers, or save it now:")
-    print(f"  chinchilla copilot use {models[0].id}" if models else "")
+    print(f"  chinchilla copilot-use {models[0].id}" if models else "")
     return 0
 
 
 def cmd_copilot_use(args: argparse.Namespace) -> int:
     from .core import copilot
+    from .store import config
 
     credentials = copilot.Credentials.load()
     if not credentials.signed_in:
