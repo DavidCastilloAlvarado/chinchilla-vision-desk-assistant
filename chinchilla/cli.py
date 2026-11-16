@@ -779,10 +779,26 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _trust_env_ca_bundle() -> None:
+    """Let `.env` name a CA bundle, for networks that inspect TLS.
+
+    httpx reads `SSL_CERT_FILE` from the process environment only, and a
+    desktop launch or the login agent does not carry the shell's exports.
+    """
+    if os.environ.get("SSL_CERT_FILE"):
+        return
+    from .store import config
+
+    bundle = config.env_value("SSL_CERT_FILE")
+    if bundle and Path(os.path.expanduser(bundle)).is_file():
+        os.environ["SSL_CERT_FILE"] = os.path.expanduser(bundle)
+
+
 def main(argv: list[str] | None = None) -> int:
     from . import log
 
     log.get("cli").info("invoked: %s", " ".join(sys.argv[1:] if argv is None else argv))
+    _trust_env_ca_bundle()
     parser = build_parser()
     args = parser.parse_args(argv)
     if getattr(args, "version", False):
