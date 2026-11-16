@@ -1,4 +1,5 @@
 import os
+import sys
 
 import pytest
 
@@ -6,7 +7,11 @@ from chinchilla.ui.gtk import Gtk
 from chinchilla.ui.panel import PanelContent, demo_content, to_pango
 
 pytestmark = pytest.mark.skipif(
-    not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
+    not (
+        os.environ.get("DISPLAY")
+        or os.environ.get("WAYLAND_DISPLAY")
+        or sys.platform == "darwin"  # Quartz always has a display
+    ),
     reason="needs a display to build GTK objects",
 )
 

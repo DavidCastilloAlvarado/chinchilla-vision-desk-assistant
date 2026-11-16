@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 
 import pytest
@@ -9,7 +10,11 @@ from chinchilla.core.agent import Agent
 from chinchilla.store import config, session as session_store
 
 pytestmark = pytest.mark.skipif(
-    not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
+    not (
+        os.environ.get("DISPLAY")
+        or os.environ.get("WAYLAND_DISPLAY")
+        or sys.platform == "darwin"  # Quartz always has a display
+    ),
     reason="needs a display to build GTK objects",
 )
 
