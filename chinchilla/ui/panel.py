@@ -24,6 +24,11 @@ from .widgets import place_knob
 
 PANEL_WIDTH = 404
 PADDING = 12
+# room for the cuts of one turn: the panel minus its padding, the avatar column
+# and some slack for the bubble's CSS and the overlay scrollbar
+CROP_ROW_WIDTH = PANEL_WIDTH - 2 * PADDING - 17 - 8 - 35
+CROP_SPACING = 6
+CROP_HEIGHT = 50
 
 DEFAULT_ACTIONS = [
     ("translate", "Translate"),
@@ -88,21 +93,33 @@ def usage_text(usage: Usage | None) -> str:
     )
 
 
-def load_image(path: str, height: int = 34) -> Gtk.Image | None:
+def fit_size(width: int, height: int, max_height: int, max_width: int | None = None) -> tuple[int, int]:
+    """Scale to `max_height`, then shrink further if that is wider than `max_width`.
+
+    Scaling by height alone made a flat strip (1684x156 is 540 px wide at 50
+    px tall) wider than the panel, and GTK grew the window off the screen.
+    """
+    scale = max_height / max(1, height)
+    if max_width is not None and width * scale > max_width:
+        scale = max_width / max(1, width)
+    return max(1, round(width * scale)), max(1, round(height * scale))
+
+
+def load_image(path: str, height: int = 34, max_width: int | None = None) -> Gtk.Image | None:
     if not path or not Path(path).is_file():
         return None
     try:
         pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
     except Exception:
         return None
-    width = max(1, int(pixbuf.get_width() * height / max(1, pixbuf.get_height())))
+    width, height = fit_size(pixbuf.get_width(), pixbuf.get_height(), height, max_width)
     scaled = pixbuf.scale_simple(width, height, GdkPixbuf.InterpType.BILINEAR)
     return Gtk.Image.new_from_pixbuf(scaled)
 
 
-def load_thumbnail(path: str, size: int = 40) -> Gtk.Widget | None:
+def load_thumbnail(path: str, size: int = 40, max_width: int | None = None) -> Gtk.Widget | None:
     """Small preview of a capture, used in the header and the thread."""
-    image = load_image(path, size)
+    image = load_image(path, size, max_width)
     if image is not None:
         image.get_style_context().add_class("thumb")
     return image
@@ -516,7 +533,8 @@ class PanelContent(Gtk.Box):
         for child in self._thumbs.get_children():
             self._thumbs.remove(child)
         recent = captures[-1] if captures else None
-        image = load_thumbnail(recent.path, 32) if recent is not None else None
+        # the header slot is 46 px wide; a wider preview would be cut off
+        image = load_thumbnail(recent.path, 32, 44) if recent is not None else None
         if image is not None:
             self._thumbs.pack_start(image, False, False, 0)
         else:
@@ -813,20 +831,28 @@ class PanelContent(Gtk.Box):
         return expander
 
     def _crop_row(self, capture_ids: list[str]) -> Gtk.Widget:
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=CROP_SPACING)
         row.set_margin_top(2)
         row.set_margin_bottom(2)
-        for capture_id in capture_ids[-3:]:
-            capture = next((item for item in self._captures if item.id == capture_id), None)
-            if capture is None:
-                continue
-            row.pack_start(self._crop_mini(capture), False, False, 0)
+        captures = [
+            capture
+            for capture_id in capture_ids[-3:]
+            for capture in self._captures
+            if capture.id == capture_id
+        ]
+        # share the row so even three wide cuts never push the panel wider
+        max_width = (CROP_ROW_WIDTH - CROP_SPACING * max(0, len(captures) - 1)) // max(
+            1, len(captures)
+        )
+        for capture in captures:
+            row.pack_start(self._crop_mini(capture, max_width), False, False, 0)
         return row
 
-    def _crop_mini(self, capture: Capture) -> Gtk.Widget:
+    def _crop_mini(self, capture: Capture, max_width: int = CROP_ROW_WIDTH) -> Gtk.Widget:
         overlay = Gtk.Overlay()
-        overlay.set_size_request(88, 50)
-        image = load_image(capture.path, 50)
+        image = load_image(capture.path, CROP_HEIGHT, max_width)
+        if image is None:
+            overlay.set_size_request(min(88, max_width), CROP_HEIGHT)
         if image is not None:
             image.get_style_context().add_class("crop-mini")
             overlay.add(image)

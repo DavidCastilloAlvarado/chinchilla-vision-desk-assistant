@@ -387,3 +387,39 @@ def test_a_stored_turn_renders_its_reasoning_collapsed():
     assert expander.get_expanded() is False
     assert expander.body.get_text() == "17*20=340"
     assert expanders
+
+
+def test_fit_size_keeps_flat_cuts_inside_the_width():
+    from chinchilla.ui.panel import fit_size
+
+    assert fit_size(1684, 156, 50) == (540, 50)  # the old, height-only size
+    assert fit_size(1684, 156, 50, 320) == (320, 30)
+    assert fit_size(300, 600, 50, 320) == (25, 50)  # tall cuts are untouched
+
+
+@pytest.mark.parametrize("count", [1, 3])
+def test_flat_cuts_never_widen_the_panel(tmp_path, count):
+    """A 1684x156 strip grew the window past the screen edge."""
+    from PIL import Image
+
+    from chinchilla.core.thread import Capture, Turn
+    from chinchilla.ui.panel import PANEL_WIDTH, PanelWindow
+
+    path = tmp_path / "flat.png"
+    Image.new("RGB", (1684, 156), (240, 240, 240)).save(path)
+    captures = [Capture(path=str(path), width=1684, height=156) for _ in range(count)]
+    window = PanelWindow()
+    window.content.set_session(
+        title="Fix grammar",
+        turns=[Turn(role="user", text="Fix grammar", captures=[c.id for c in captures])],
+        captures=captures,
+    )
+    window.show_all()
+    while Gtk.events_pending():
+        Gtk.main_iteration_do(False)
+
+    minimum, _natural = window.get_preferred_width()
+
+    assert minimum <= PANEL_WIDTH
+    assert window.get_allocated_width() == PANEL_WIDTH
+    window.destroy()
