@@ -2,7 +2,7 @@
 
 Select part of your screen, ask a vision model about it.
 
-Press `Ctrl+Alt+A`, drag a box, and a panel opens with **Translate**,
+Press `Ctrl+Alt+A` (`⌃⌥A` on a Mac), drag a box, and a panel opens with **Translate**,
 **Explain**, **Fix grammar** and a free prompt box. Keep the conversation
 going, add more screen cuts, switch between saved sessions.
 
@@ -11,7 +11,8 @@ going, add more screen cuts, switch between saved sessions.
 The panel is also a normal chat: ask a plain question without cutting anything.
 A cut rides with the next message only, so follow-ups stay text.
 
-Built for Linux desktops (GNOME/Wayland tested), no terminal required.
+Runs on Linux desktops (GNOME/Wayland tested) and on macOS (Apple silicon
+tested), no terminal required once installed.
 
 ## Status
 
@@ -24,15 +25,27 @@ repository.
 
 ## Installation
 
-Chinchilla is a GTK 3 desktop app. GTK, PyGObject and the screenshot portal
-must come from the system (they cannot be pip-installed); the Python code and
-its two libraries live in a virtualenv.
+Chinchilla is a GTK 3 desktop app. GTK, PyGObject and pycairo come from the
+system package manager (they cannot be pip-installed); the Python code and its
+two libraries live in a virtualenv that can see them.
+
+Steps 1-3 and 6 depend on the platform, the rest is shared:
+
+| Step | Ubuntu (GNOME) | macOS |
+| --- | --- | --- |
+| 1-3. Requirements, packages, the app | [Ubuntu](#ubuntu-gnome) | [macOS](#macos) |
+| 4. Provider keys, GitHub Copilot | [shared](#4-provider-keys) | [shared](#4-provider-keys) |
+| 5. Web search (optional) | [shared](#5-web-search) | [shared](#5-web-search) |
+| 6. Shortcut and autostart | [GNOME keybinding](#ubuntu-gnome-keybinding-and-autostart) | [login agent and hotkey](#macos-login-agent-and-hotkey) |
+| 7-9. Check, troubleshoot, uninstall | [shared](#7-check-the-installation) | [shared](#7-check-the-installation) |
+
+### Ubuntu (GNOME)
 
 Tested on Ubuntu 24.04 with GNOME 46 on Wayland. Other GNOME distributions with
 GTK 3 and `xdg-desktop-portal` should work; KDE and plain window managers are
 untested.
 
-### 1. Requirements
+#### 1. Requirements (Ubuntu)
 
 | Needed for | Version | Debian/Ubuntu package |
 | --- | --- | --- |
@@ -50,7 +63,7 @@ untested.
 surface and hands the frame to GTK as a pixbuf, so the GTK/cairo bridge is
 never needed. Installing it is harmless but changes nothing today.
 
-### 2. System packages
+#### 2. System packages (Ubuntu)
 
 ```bash
 sudo apt update
@@ -69,7 +82,7 @@ Fedora equivalents that matter: `python3-gobject`, `gtk3`,
 `xdg-desktop-portal xdg-desktop-portal-gnome`, `xdg-desktop-portal-gtk`,
 `glib2`, `libayatana-appindicator-gtk3`.
 
-### 3. The app
+#### 3. The app (Ubuntu)
 
 ```bash
 git clone <this repository> chinchilla-auto-translate
@@ -106,6 +119,168 @@ chinchilla version
 The virtualenv directory is used by the shortcut (the app stores the absolute
 interpreter), so **do not move or recreate it after installing the shortcut** —
 re-run `chinchilla shortcuts install` if you do.
+
+Continue with [4. Provider keys](#4-provider-keys).
+
+### macOS
+
+Tested on macOS 27 on Apple silicon with GTK 3.24.52 on the native **Quartz**
+backend (from conda-forge, see [no Homebrew bottles](#no-homebrew-bottles-conda-forge-instead);
+Homebrew's `gtk+3` is the same Quartz build): no XQuartz, no X11, no D-Bus and
+no `pyobjc`.
+The few native calls GTK does not cover (global hotkey, Screen Recording grant,
+window level, focus) go through `ctypes` to the system frameworks, so the
+Python dependencies stay the same two as on Linux. Intel Macs should behave the
+same with Homebrew under `/usr/local`.
+
+#### 1. Requirements (macOS)
+
+| Needed for | Version | Where it comes from |
+| --- | --- | --- |
+| Runtime | Python 3.10+, the one Homebrew's `pygobject3` is built for | `python@3.x`, pulled in by `pygobject3` |
+| The UI | GTK 3 (Quartz) + PyGObject + pycairo | `brew install gtk+3 pygobject3` |
+| Silent capture | `screencapture` | ships with macOS |
+| Seeing other windows in the capture | the **Screen Recording** grant, or ⌘⌃⇧4 without it | System Settings, once (step 3); needs an admin on managed Macs |
+| The `⌃⌥A` hotkey | Carbon `RegisterEventHotKey` | ships with macOS, no Accessibility grant needed |
+| Menu bar icon | GTK status icon, icon drawn in code | included |
+| Web search (optional) | Node.js 18+ with `npx` | `brew install node`, or [nodejs.org](https://nodejs.org) |
+| Web search (optional) | Chrome, Chromium, Brave or Edge | the `.app` in `/Applications` (or `~/Applications`), auto-detected |
+| Reading PDFs while searching (optional) | `pdftoppm` | `brew install poppler` |
+
+`adwaita-icon-theme` is **not** needed: the only themed icon was the tray icon,
+and on macOS it is drawn in code. Skipping it also avoids `librsvg`, which
+builds a whole Rust toolchain when no bottle is available.
+
+#### 2. Homebrew packages (macOS)
+
+```bash
+brew install gtk+3 pygobject3
+brew install node poppler          # only for web search
+```
+
+With Homebrew in its default prefix (`/opt/homebrew`) these are bottles and
+install in a few minutes.
+
+##### No Homebrew bottles: conda-forge instead
+
+Homebrew bottles only relocate to prefixes of up to 13 characters, so a
+Homebrew in a custom prefix (`~/somewhere/homebrew`) builds the whole GTK stack
+from source, and at the time of writing `gobject-introspection` fails there
+(`undefined local variable or method 'python3'`). conda-forge ships the same
+GTK 3 (Quartz) and PyGObject prebuilt, in a self-contained folder:
+
+```bash
+# micromamba is a single binary; ~/.local/bin is just a convenient place
+mkdir -p ~/.local/bin
+curl -fsSL https://micro.mamba.pm/api/micromamba/osx-arm64/latest | tar -xj -C /tmp bin/micromamba
+mv /tmp/bin/micromamba ~/.local/bin/
+
+export MAMBA_ROOT_PREFIX=~/micromamba
+~/.local/bin/micromamba create -y -n chinchilla -c conda-forge python=3.12 pygobject gtk3 pycairo
+PY=~/micromamba/envs/chinchilla/bin/python      # use this as PY in step 3
+```
+
+Behind a TLS-inspecting proxy, give micromamba the macOS trust store with
+`--ssl-verify <bundle>` (how to build the bundle:
+[Corporate networks](#corporate-networks-tls-inspection)). Use `osx-64` instead
+of `osx-arm64` on an Intel Mac.
+
+#### 3. The app (macOS)
+
+The venv has to use the exact Python that `pygobject3` was built for (Homebrew
+moves it forward over time; `python@3.15` today), otherwise `import gi` fails:
+
+```bash
+git clone <this repository> chinchilla-auto-translate
+cd chinchilla-auto-translate
+
+# Homebrew: the python@3.x that pygobject3 depends on (conda-forge: PY from above)
+PYV=$(brew deps pygobject3 | grep -Eo 'python@3\.[0-9]+' | sort -V | tail -1)
+PY="$(brew --prefix "$PYV")/bin/python${PYV#python@}"
+"$PY" -c 'import gi, cairo; print("gi", gi.__version__)'   # must print a version
+
+uv venv --system-site-packages --python "$PY"
+uv pip install -e .                # pillow + httpx
+source .venv/bin/activate
+chinchilla version
+```
+
+The Ubuntu rules apply unchanged: `--system-site-packages` and an explicit
+`--python` are both mandatory, use `uv pip install -e .` and not `uv sync`, and
+re-run `chinchilla shortcuts install` after moving or recreating `.venv`. Behind
+a TLS-inspecting proxy `uv` reports `invalid peer certificate: UnknownIssuer`;
+add `--native-tls` so it trusts the macOS keychain.
+
+**Screen Recording.** macOS answers a capture from an app without this grant
+with the wallpaper and the menu bar only: every window is blanked. Ask for it
+once:
+
+```bash
+chinchilla permission grant      # shows the macOS prompt the first time
+chinchilla permission            # granted (Screen Recording)
+```
+
+Turn the switch on in **System Settings › Privacy & Security › Screen & System
+Audio Recording**, then quit and reopen the app that owns the grant. The grant
+belongs to the *responsible* app: your terminal (Terminal, iTerm, VS Code) when
+you run `chinchilla` from it, and the **Python** binary (`python3.12`, or
+`Python` for Homebrew) when the login agent of step 6 starts it. macOS only
+re-reads the grant when that app restarts. Chinchilla asks at most once per
+run, so a refused prompt does not come back on every hotkey press.
+
+**No admin rights (managed Macs).** Where only an administrator can add apps to
+Screen Recording, every capture Chinchilla starts itself comes back blank,
+`screencapture -i` included. macOS's own screenshot tool is not bound by the
+grant, so the hotkey switches to a hand-off:
+
+1. `⌃⌥A` opens the panel with `no Screen Recording grant: take the cut with
+   ⌘⌃⇧4`.
+2. Press **⌘⌃⇧4** (Command+Control+Shift+4, "copy a region to the clipboard")
+   and drag the region.
+3. Chinchilla sees the new image on the clipboard and attaches it as the cut,
+   exactly like its own selector would.
+4. For more cuts in the same session just press ⌘⌃⇧4 again: as long as the
+   panel is open, every image that lands on the clipboard becomes the next cut
+   (copied text is ignored). Hiding the panel stops the watch; `⌃⌥A` starts it
+   again.
+
+`chinchilla capture` does the same from a terminal (it waits 90 s for one cut),
+and `chinchilla capture --area --backend clipboard` forces it.
+
+**Shorter: plain ⌘⇧4.** If your screenshots are set to go to the clipboard,
+plain **⌘⇧4** puts the cut there too, so you can skip Control. To set it,
+press ⌘⇧5, then **Options › Save to › Clipboard**, or from a terminal:
+
+```bash
+defaults write com.apple.screencapture target clipboard   # "file" restores the Desktop
+defaults read com.apple.screencapture target              # clipboard
+```
+
+This changes every ⌘⇧3/⌘⇧4 screenshot, not only the ones for Chinchilla: they
+stop landing on the Desktop. Without this setting ⌘⇧4 saves a file and
+Chinchilla never sees it, which is why the panel hint says ⌘⌃⇧4: that one
+copies to the clipboard on every Mac.
+
+**Corporate networks (TLS inspection)**<a id="corporate-networks-tls-inspection"></a>.
+A proxy that re-signs TLS breaks `uv`, `micromamba` and the provider calls
+(`CERTIFICATE_VERIFY_FAILED ... self-signed certificate in certificate chain`).
+Export the macOS keychains (they hold the company root) into a bundle and name
+it in `.env`; the app reads `SSL_CERT_FILE` from there, and the login agent
+also inherits it from the shell that ran `shortcuts install`:
+
+```bash
+security find-certificate -a -p \
+  /System/Library/Keychains/SystemRootCertificates.keychain \
+  /Library/Keychains/System.keychain \
+  ~/Library/Keychains/login.keychain-db > ~/.config/chinchilla/ca-bundle.pem
+# if IT ships a separate bundle (often in $NODE_EXTRA_CA_CERTS), append it too
+cat "$NODE_EXTRA_CA_CERTS" >> ~/.config/chinchilla/ca-bundle.pem
+echo "SSL_CERT_FILE=$HOME/.config/chinchilla/ca-bundle.pem" >> ~/.config/chinchilla/.env
+```
+
+`uv` takes `--native-tls` instead.
+
+Continue with [4. Provider keys](#4-provider-keys).
 
 ### 4. Provider keys
 
@@ -291,9 +466,9 @@ seconds**; after that the agent stops and says so instead of crawling.
 
 | Piece | Why | How |
 | --- | --- | --- |
-| Node.js ≥ 18 with `npx` | runs the MCP server; `npx` downloads it the first time | [nodejs.org](https://nodejs.org), or `sudo apt install nodejs npm` (Ubuntu's is 18+) |
-| A Chrome-family browser | the server drives it over CDP | `google-chrome-stable`, `chromium`, Brave or Edge; auto-detected |
-| `poppler-utils` (optional) | turns a fetched PDF into page images the model can read | `sudo apt install poppler-utils` |
+| Node.js ≥ 18 with `npx` | runs the MCP server; `npx` downloads it the first time | [nodejs.org](https://nodejs.org); Ubuntu `sudo apt install nodejs npm` (18+); macOS `brew install node` |
+| A Chrome-family browser | the server drives it over CDP | Ubuntu: `google-chrome-stable`, `chromium`, Brave or Edge; macOS: Chrome, Chromium, Brave or Edge in `/Applications`; auto-detected |
+| `pdftoppm` (optional) | turns a fetched PDF into page images the model can read | Ubuntu `sudo apt install poppler-utils`; macOS `brew install poppler` |
 
 Without any browser on the machine, let the plugin bring its own:
 
@@ -313,9 +488,12 @@ searches take 2-5 s.
 Desktop sessions often start with a shorter `PATH` than your terminal, which is
 why `npx: command not found` shows up only inside the app. Chinchilla therefore
 probes `PATH` plus `~/.local/node/bin`, `~/.volta/bin`, `~/.bun/bin`,
-`~/.nvm/versions/node/*/bin` and `~/.fnm/node-versions/*/installation/bin`, and
-prepends the directory it found to the server's own `PATH` (the package shebang
-is `/usr/bin/env node`).
+`~/.nvm/versions/node/*/bin` and `~/.fnm/node-versions/*/installation/bin`
+(plus `/opt/homebrew/bin` and `/usr/local/bin` on macOS), and prepends the
+directory it found to the server's own `PATH` (the package shebang is
+`/usr/bin/env node`). On macOS the login agent also records the `PATH` of the
+shell that ran `chinchilla shortcuts install`, so a Node found there is found
+by the agent too.
 
 If your Node lives somewhere else, name it explicitly in `.env`:
 
@@ -324,6 +502,7 @@ WEBSEARCH_MCP_COMMAND=/home/you/opt/node/bin/npx
 WEBSEARCH_MCP_ARGS=-y dsh-google-chrome-search mcp
 CHROME_PATH=/usr/bin/google-chrome
 GSEARCH_PROFILE=/home/you/.dsh-chrome-google
+# macOS: CHROME_PATH=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 ```
 
 `WEBSEARCH_MCP_COMMAND` + `WEBSEARCH_MCP_ARGS` replace the whole command, so you
@@ -384,6 +563,8 @@ search.
 
 ### 6. Shortcut and autostart
 
+#### Ubuntu: GNOME keybinding and autostart
+
 ```bash
 chinchilla shortcuts install     # Ctrl+Alt+A, bound to this virtualenv
 chinchilla shortcuts status
@@ -410,13 +591,51 @@ NoDisplay=true
 EOF
 ```
 
+#### macOS: login agent and hotkey
+
+macOS has no keybinding daemon that runs a command, so the app owns the hotkey
+itself and has to stay running. `shortcuts install` covers both the shortcut
+and the autostart:
+
+```bash
+chinchilla shortcuts install                              # ⌃⌥A (Control+Option+A)
+chinchilla shortcuts install --binding "<Primary><Shift>2"  # or ⌘⇧2, any letter/digit/F-key
+chinchilla shortcuts status      # <Control><Alt>a -> .../python -m chinchilla daemon (running, pid 4242)
+chinchilla shortcuts uninstall   # stops the agent and removes it
+```
+
+What it sets up:
+
+| Piece | Detail |
+| --- | --- |
+| login agent | `~/Library/LaunchAgents/io.github.chinchilla.plist`, runs `.venv/bin/python -m chinchilla daemon` at login and now; restarted after a crash, left alone after **Quit** |
+| hotkey | registered by that process with Carbon `RegisterEventHotKey` (no Accessibility grant); the binding is `hotkey` in `settings.json`, re-read on every activation |
+| menu bar | a magnifier icon; click it for **Capture region**, **Sessions**, **Settings**, **Quit**. No Dock icon. After **Quit** the agent stays down until the next login; `chinchilla daemon` from a terminal starts it again |
+| single instance | the running process holds a lock next to `~/.local/state/chinchilla/control.sock`; later launches (`chinchilla capture --panel`, `chinchilla app`, a second `daemon`) hand their request over through the socket and exit before drawing anything |
+| `PATH` | the agent gets the `PATH` of the shell that ran `install`, plus `/opt/homebrew/bin` and `/usr/local/bin`, so `npx` is found |
+| output | `~/.local/state/chinchilla/launchd.log` (the app log stays in `chinchilla.log`) |
+
+Bindings use the GTK accelerator syntax: `<Control>`, `<Alt>`/`<Option>`,
+`<Shift>`, and `<Primary>`/`<Super>`/`<Cmd>` for ⌘, followed by a letter, a
+digit, `space` or `F1`-`F12`. macOS 15+ refuses combinations made only of
+Option or Option+Shift; keep Control or ⌘ in it. Inside the panel every
+documented `Ctrl` shortcut also works with ⌘.
+
+The agent's process is a different "responsible app" than your terminal, so
+the first capture through the hotkey makes macOS ask for **Python**'s Screen
+Recording grant. Allow it, then restart the agent so macOS re-reads it:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/io.github.chinchilla
+```
+
 ### 7. Check the installation
 
 ```bash
 chinchilla doctor
 ```
 
-Every line must be `ok`:
+Every line must be `ok`. On Ubuntu:
 
 ```
 [ok  ] python: 3.12.3
@@ -430,6 +649,20 @@ Every line must be `ok`:
 [ok  ] shortcut: <Control><Alt>a -> .../python -m chinchilla capture --panel
 ```
 
+On macOS:
+
+```
+[ok  ] python: 3.12.16
+[ok  ] gtk: 3.24.52
+[ok  ] session: macOS 27.0.1 (quartz)
+[ok  ] paths: /Users/you/.local/share/chinchilla writable
+[ok  ] provider: copilot model=claude-sonnet-5.5 (signed in as you)
+[ok  ] capture: screencapture, screencapture-area, clipboard
+[ok  ] websearch: /path/npx -y dsh-google-chrome-search mcp
+[ok  ] screenshot: granted (Screen Recording)
+[ok  ] shortcut: <Control><Alt>a -> .../python3 -m chinchilla daemon (running, pid 4242)
+```
+
 `--verbose` adds the resolved paths, retries the web search server for real and
 lists the tools it exposes:
 
@@ -440,16 +673,20 @@ lists the tools it exposes:
        profile: /home/you/.dsh-chrome-google
 ```
 
-Then press `Ctrl+Alt+A` and drag a box, and run `chinchilla search "hello"` once
+Then press `Ctrl+Alt+A` (`⌃⌥A` on macOS) and drag a box, and run `chinchilla search "hello"` once
 to prove the search path end to end. The log is at
 `~/.local/state/chinchilla/chinchilla.log` and every run starts with
 `invoked: ...`, which is how you tell "the key never fired" from "the key fired
 and the capture failed".
 
-The first capture grants Chinchilla the portal's `screenshot` permission for
-its own app id, so no dialog appears and no shutter sound plays.
+On Ubuntu the first capture grants Chinchilla the portal's `screenshot`
+permission for its own app id, so no dialog appears and no shutter sound plays.
 `chinchilla permission` shows the state and `chinchilla permission revoke`
-takes it back.
+takes it back. On macOS only you can grant Screen Recording (see
+[3. The app (macOS)](#3-the-app-macos)); `chinchilla permission revoke` opens
+the System Settings pane where the switch is. Without the grant the
+`screenshot` line reads `fail ... until then cuts come from ⌘⌃⇧4 (clipboard)`:
+everything works, the cut just comes from the system screenshot tool.
 
 ### 8. Troubleshooting
 
@@ -469,7 +706,25 @@ takes it back.
 | Nothing is drawn over the screen | `python3-gi-cairo` missing **and** an old checkout: the current build does not need it. Update the code and `uv pip install -e .` again. |
 | Blurry or misplaced overlay | A second monitor with a different scale, or a leftover instance. `pgrep -af "chinchilla capture"`, then `kill <pid>`. |
 
+macOS only:
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `ModuleNotFoundError: gi` | The venv uses a different Python than the one `pygobject3` was built for. Recreate it with the `PY` from [3. The app (macOS)](#3-the-app-macos), then `uv pip install -e .` and `chinchilla shortcuts install` again. After `brew upgrade` moves `pygobject3` to a newer `python@3.x`, do the same. |
+| The capture shows only the wallpaper and the menu bar | Screen Recording is missing for the responsible app (your terminal, or **Python** for the login agent). Allow it in System Settings, then restart that app or `launchctl kickstart -k gui/$(id -u)/io.github.chinchilla`. |
+| Granting Screen Recording asks for an administrator | A managed Mac. Cancel it and use the [⌘⌃⇧4 hand-off](#3-the-app-macos): `⌃⌥A`, then ⌘⌃⇧4. |
+| The hotkey stopped working after clicking the menu bar icon | **Quit** was chosen; the agent does not restart after a clean quit. `chinchilla daemon` starts it again. |
+| `CERTIFICATE_VERIFY_FAILED` on login, models or answers | TLS inspection: build the keychain bundle and set `SSL_CERT_FILE` in `~/.config/chinchilla/.env` ([Corporate networks](#corporate-networks-tls-inspection)). |
+| `⌃⌥A` does nothing | `chinchilla shortcuts status` must say `running`. The log says `macOS refused ...` when another app owns the combination: pick another with `chinchilla shortcuts install --binding ...`. `hotkey ... pressed` in the log proves the key fired. |
+| Nothing happens after `chinchilla capture --panel` | It handed the request to the running agent (`handed over to the running instance` in the log); the panel opens there. `chinchilla shortcuts status` shows its pid. |
+| The agent does not start | Read `~/.local/state/chinchilla/launchd.log`; a moved or recreated `.venv` needs `chinchilla shortcuts install` again. |
+| No menu bar icon | The menu bar is full (on a notched display extra icons are hidden behind the notch). The hotkey and CLI work regardless. |
+| `uv pip install` fails with `invalid peer certificate` | A TLS-inspecting proxy: add `--native-tls`. |
+| `brew install gtk+3 pygobject3` builds from source and fails | Homebrew lives in a custom prefix. Use [conda-forge](#no-homebrew-bottles-conda-forge-instead). |
+
 ### 9. Uninstall
+
+Ubuntu:
 
 ```bash
 chinchilla shortcuts uninstall
@@ -478,14 +733,29 @@ rm -rf .venv
 rm -rf ~/.config/chinchilla ~/.local/share/chinchilla ~/.local/state/chinchilla
 ```
 
-The last line also deletes your sessions, captures and saved keys.
+macOS:
+
+```bash
+chinchilla shortcuts uninstall   # stops the agent, removes ~/Library/LaunchAgents/io.github.chinchilla.plist
+rm -rf .venv
+rm -rf ~/.config/chinchilla ~/.local/share/chinchilla ~/.local/state/chinchilla
+brew uninstall pygobject3 gtk+3  # optional, if nothing else uses them
+rm -rf ~/micromamba/envs/chinchilla   # instead, if you used conda-forge
+```
+
+Remove **Python** (and your terminal, if you added it only for this) from
+System Settings › Privacy & Security › Screen & System Audio Recording.
+
+The `rm -rf ~/.config/...` line also deletes your sessions, captures and saved
+keys.
 
 ## Use
 
 ```bash
 chinchilla shortcuts install     # Ctrl+Alt+A -> chinchilla capture --panel
+                                 # macOS: ⌃⌥A, login agent running the daemon
                                  # (reinstall after moving the checkout)
-chinchilla daemon                # tray icon, no capture (use it at login)
+chinchilla daemon                # tray / menu bar icon, no capture (use it at login)
 chinchilla capture --panel       # capture a region and open the panel
 chinchilla settings              # tabs: General, Actions, Providers, Web, Data
 chinchilla sessions list         # stored conversations
@@ -499,7 +769,8 @@ chinchilla doctor --verbose      # plus the resolved paths, servers and tools
 
 Inside the panel: `Ctrl+R` adds another cut, `Ctrl+N` starts a session,
 `Ctrl+S` opens the session selector, `Ctrl+W` toggles web search, `1`/`2`/`3`
-run the quick actions and `Esc` hides. The footer carries **Stop** (keeps the
+run the quick actions and `Esc` hides (on macOS `⌘` works in place of
+`Ctrl`). The footer carries **Stop** (keeps the
 text already received), **Copy** (last answer to the clipboard) and **Retry**
 (regenerates the last answer in place: the question is reused, so no second
 turn is added and no new cut is needed).
@@ -611,7 +882,8 @@ field that trades latency for thinking. The dropdown in the footer picks it:
 
 1. `Ctrl+Alt+A` hides the panel and takes a silent full-screen frame through
    the XDG portal (`xdg-desktop-portal` asks for the *screenshot* permission
-   once; Chinchilla records the grant itself, see below).
+   once; Chinchilla records the grant itself, see below). On macOS `⌃⌥A`
+   takes it with `screencapture -x -m` (the main display, no shutter sound).
 2. Chinchilla's own selector opens over that frozen frame: everything outside
    the drag is dimmed, the selection stays bright, with a border, round grips
    on the corners and edge midpoints, a size badge and a loupe.
@@ -620,7 +892,10 @@ field that trades latency for thinking. The dropdown in the footer picks it:
 
 No desktop selector and no shutter sound are involved. If the portal refuses
 the silent grab (no permission store, another desktop), Chinchilla falls back
-to the desktop's own area picker and says so in the panel status.
+to the desktop's own area picker and says so in the panel status; on macOS the
+fallback is `screencapture -i`, the system's own crosshair, and without the
+Screen Recording grant the cut comes from your own ⌘⌃⇧4 through the clipboard.
+Cancelling a selector (`Esc`) ends the capture; no other backend is tried.
 
 #### The screenshot permission
 
@@ -633,6 +908,11 @@ itself once (for its own id only) so the hotkey never opens a dialog:
 chinchilla permission            # granted (app id 'com.example.Terminal')
 chinchilla permission revoke     # ask the desktop again on the next capture
 ```
+
+macOS has no such store for apps to write: the user grants **Screen Recording**
+in System Settings, `chinchilla permission grant` shows the system prompt the
+first time, and `chinchilla permission` reads the state with
+`CGPreflightScreenCaptureAccess` (see [3. The app (macOS)](#3-the-app-macos)).
 
 ### Web search
 
@@ -669,6 +949,11 @@ Setup, the profile layout and the CAPTCHA behaviour are in
 | Log | `~/.local/state/chinchilla/chinchilla.log` |
 | Web search Chrome profile | `~/.dsh-chrome-google/` (`settings`, `browser/`, `screenshots/`, `downloads/`) |
 | npm cache for the MCP server | `~/.npm/_npx/` |
+| macOS login agent | `~/Library/LaunchAgents/io.github.chinchilla.plist`, its output in `~/.local/state/chinchilla/launchd.log` |
+| macOS single-instance socket | `~/.local/state/chinchilla/control.sock` and its `control.sock.lock` (both mode 0600) |
+
+macOS uses the same XDG-style folders as Linux (`XDG_CONFIG_HOME` and friends
+are honoured), so the table holds on both platforms.
 
 ## Desktop notes
 
@@ -689,10 +974,28 @@ Setup, the profile layout and the CAPTCHA behaviour are in
 - The palette used by the overlay, the panel and the settings dialog is in
   `chinchilla/ui/theme.py`.
 
+macOS:
+
+- Homebrew's GTK only has the Quartz backend, so `GDK_BACKEND` is never forced
+  there, even when XQuartz left a `DISPLAY` behind.
+- `fullscreen()` on Quartz slides the window into a new Space, so the selector
+  is instead a borderless window the size of the main display, lifted to the
+  screen-saver level (above the menu bar and the Dock) and joined to every
+  Space. The frame is in pixels and the selection in points, so a Retina crop
+  keeps the full resolution.
+- GTK raises its windows but never activates the process, so the panel and the
+  selector call `activateIgnoringOtherApps:` to take the keyboard; hiding the
+  panel hands the focus back to the app you were in. The process runs with the
+  *accessory* activation policy: menu bar icon, no Dock icon.
+- `GApplication` is unique through the session D-Bus, which macOS does not
+  have; a Unix socket in the state folder keeps one process instead.
+- Native calls (`chinchilla/macos/`) use `ctypes` against AppKit, Carbon and
+  CoreGraphics, so there is no `pyobjc` to install.
+
 ## Development
 
 ```bash
-uv venv --system-site-packages      # PyGObject/GTK come from the system
+uv venv --system-site-packages --python /usr/bin/python3   # macOS: --python "$PY", see step 3
 uv pip install -e .
 .venv/bin/python -m chinchilla version
 .venv/bin/python -m chinchilla doctor
