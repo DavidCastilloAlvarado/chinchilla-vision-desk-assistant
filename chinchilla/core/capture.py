@@ -3,6 +3,9 @@
 Wayland forbids reading the screen directly, so every backend is a portal, a
 desktop helper or an X11 grab. They are tried in order and the first one that
 produces pixels wins. Area backends hand back an already cropped image.
+
+macOS uses the system `screencapture` tool instead: silent for the full frame,
+interactive for the fallback area picker.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from typing import Callable
 
 from PIL import Image
 
-from .. import log
+from .. import log, system
 from .geometry import Rect, fit
 
 LOGGER = log.get("capture")
@@ -32,6 +35,10 @@ PORTAL_TIMEOUT = 30.0
 
 class CaptureError(RuntimeError):
     """Raised when a backend cannot deliver an image."""
+
+
+class CaptureCancelled(CaptureError):
+    """The user backed out of a selector; no other backend should be tried."""
 
 
 @dataclass
@@ -209,7 +216,7 @@ def _portal_screenshot(
     code = state.get("code")
     LOGGER.info("portal response code=%s uri=%s", code, state.get("uri"))
     if code == 1:
-        raise CaptureError("portal capture cancelled")
+        raise CaptureCancelled("portal capture cancelled")
     if code != 0 or not state.get("uri"):
         raise CaptureError(
             "portal refused the screenshot; grant the screenshot permission "
@@ -320,12 +327,80 @@ def _grab_x11() -> Image.Image:
     return ImageGrab.grab(all_screens=True)
 
 
+# ---------------------------------------------------------------------- macOS
+
+
+def _probe_screencapture() -> tuple[bool, str]:
+    if not system.is_mac():
+        return False, "screencapture is macOS only"
+    path = shutil.which("screencapture")
+    return (bool(path), path or "screencapture not found")
+
+
+def _screencapture(*flags: str) -> Image.Image:
+    """Run `screencapture` into a temp file; a cancelled selection leaves none."""
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / "capture.png"
+        result = subprocess.run(
+            ["screencapture", *flags, "-t", "png", str(target)],
+            capture_output=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            raise CaptureError(
+                f"screencapture failed ({result.returncode}): "
+                f"{result.stderr.decode(errors='replace').strip()[:200]}"
+            )
+        if not target.exists():
+            raise CaptureCancelled("capture cancelled")
+        return Image.open(target).copy()
+
+
+def _grab_screencapture() -> Image.Image:
+    # -x: no shutter sound, -m: the main display, the one the overlay covers
+    return _screencapture("-x", "-m")
+
+
+def _grab_screencapture_area() -> Image.Image:
+    return _screencapture("-x", "-i")
+
+
+CLIPBOARD_TIMEOUT = 90.0
+CLIPBOARD_HINT = "take the cut with \u2318\u2303\u21e74 (copy a region to the clipboard)"
+
+
+def _probe_clipboard() -> tuple[bool, str]:
+    if not system.is_mac():
+        return False, "clipboard hand-off is macOS only"
+    return True, f"no Screen Recording needed: {CLIPBOARD_HINT}"
+
+
+def grab_clipboard(timeout: float = CLIPBOARD_TIMEOUT) -> Image.Image:
+    """Wait for the user's own ⌘⌃⇧4 cut; works without Screen Recording."""
+    from ..macos import pasteboard
+
+    image = pasteboard.wait_for_image(timeout)
+    if image is None:
+        raise CaptureError(f"no image reached the clipboard within {int(timeout)} s")
+    return image
+
+
 # --------------------------------------------------------------------- catalog
 
 
 def backends() -> list[Backend]:
+    file_backend = Backend(
+        "file", "screen", "image from CHINCHILLA_CAPTURE_SOURCE", _probe_file, _grab_file
+    )
+    if system.is_mac():
+        return [
+            file_backend,
+            Backend("screencapture", "screen", "macOS screencapture (main display)", _probe_screencapture, _grab_screencapture),
+            Backend("screencapture-area", "area", "macOS screencapture (select area)", _probe_screencapture, _grab_screencapture_area),
+            Backend("clipboard", "area", "macOS clipboard (\u2318\u2303\u21e74)", _probe_clipboard, grab_clipboard),
+        ]
     catalog = [
-        Backend("file", "screen", "image from CHINCHILLA_CAPTURE_SOURCE", _probe_file, _grab_file),
+        file_backend,
         Backend("portal", "screen", "XDG portal (full screen)", _probe_portal, _grab_portal),
         Backend("portal-area", "area", "XDG portal (select area)", _probe_portal_area, _grab_portal_area),
         Backend("gnome-shell", "screen", "GNOME Shell screenshot", _probe_shell, _grab_shell),
@@ -409,6 +484,8 @@ def grab_area(preferred: str | None = None) -> Grab:
     for backend in candidates:
         try:
             image = backend.grab()
+        except CaptureCancelled:
+            raise
         except Exception as exc:
             errors.append(f"{backend.id}: {exc}")
             continue
