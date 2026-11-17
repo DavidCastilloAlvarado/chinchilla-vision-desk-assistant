@@ -9,7 +9,6 @@ field and a footer with the provider and the turn buttons.
 from __future__ import annotations
 
 import html
-import re
 import time
 from pathlib import Path
 from typing import Callable
@@ -20,6 +19,8 @@ from ..store import config
 from ..core.thread import Capture, Source, Turn, Usage
 from . import theme
 from .gtk import Gdk, GdkPixbuf, GLib, Gtk, Pango
+from .markdown import to_pango  # noqa: F401  kept for single-label callers
+from .richtext import MarkdownView
 from .widgets import place_knob
 
 PANEL_WIDTH = 404
@@ -36,23 +37,6 @@ DEFAULT_ACTIONS = [
     ("grammar", "Fix grammar"),
 ]
 
-_CODE = re.compile(r"`([^`]+)`")
-_BOLD = re.compile(r"\*\*([^*]+)\*\*")
-_ITALIC = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)")
-
-
-def to_pango(text: str) -> str:
-    """Very small markdown subset -> pango markup, always escaped first."""
-    escaped = html.escape(text or "")
-    escaped = _CODE.sub(r"<tt>\1</tt>", escaped)
-    escaped = _BOLD.sub(r"<b>\1</b>", escaped)
-    escaped = _ITALIC.sub(r"<i>\1</i>", escaped)
-    lines = []
-    for line in escaped.splitlines():
-        if line.startswith("- "):
-            line = "  \u2022 " + line[2:]
-        lines.append(line)
-    return "\n".join(lines)
 
 
 def clock(timestamp: float) -> str:
@@ -586,7 +570,7 @@ class PanelContent(Gtk.Box):
         if self._streaming_label is None:
             self.start_assistant_turn()
         self._streaming_text += delta
-        self._streaming_label.set_markup(to_pango(self._streaming_text))
+        self._streaming_label.set_markdown(self._streaming_text)
         if self._reasoning_expander is not None:
             # the answer began: fold the thinking away, it stays one click away
             self._reasoning_expander.set_expanded(False)
@@ -617,10 +601,10 @@ class PanelContent(Gtk.Box):
         self, sources: list[Source] | None = None, error: str | None = None
     ) -> None:
         if self._streaming_label is not None:
-            text = error or self._streaming_text or "\u2026"
             if error:
-                self._streaming_label.get_style_context().add_class("error-text")
-            self._streaming_label.set_markup(to_pango(text))
+                self._streaming_label.set_plain(error, "error-text")
+            else:
+                self._streaming_label.set_markdown(self._streaming_text or "\u2026")
             self._last_answer = self._streaming_text or (error or "")
         if sources and self._streaming_turn is not None:
             self._streaming_turn.add_sources(sources)
@@ -779,15 +763,11 @@ class PanelContent(Gtk.Box):
         if turn.reasoning:
             bubble.pack_start(self._reasoning_block(turn.reasoning), False, False, 0)
 
-        label = Gtk.Label()
-        label.set_line_wrap(True)
-        label.set_xalign(0)
-        label.set_selectable(True)
-        label.get_style_context().add_class("turn-body")
+        label = MarkdownView(on_link=self._on_source_link)
         if turn.text:
-            label.set_markup(to_pango(turn.text))
+            label.set_markdown(turn.text)
         else:
-            label.set_text("\u2026")
+            label.set_plain("\u2026")
         bubble.pack_start(label, False, False, 0)
 
         if turn.sources:

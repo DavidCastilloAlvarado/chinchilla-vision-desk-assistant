@@ -301,6 +301,33 @@ label.muted-label {{ color: {TEXT_MUTED}; font-size: 10.5px; }}
 label.body-label {{ color: #dde2eb; font-size: 12px; }}
 label.title-label {{ color: {TEXT}; font-weight: 600; }}
 .error-text {{ color: {DANGER}; }}
+label.error-text {{ color: {DANGER}; }}
+
+/* ------------------------------------------------------------ code blocks */
+.code-block {{
+  background-color: #0f1318;
+  border: 1px solid #262d39;
+  border-radius: 6px;
+  padding: 4px 8px 6px 8px;
+}}
+label.code-lang {{ color: #6f7a8e; font-size: 9px; font-weight: 600; }}
+label.code-text {{
+  font-family: "SF Mono", Menlo, "DejaVu Sans Mono", "Ubuntu Mono", monospace;
+  font-size: 10.5px;
+  color: #dfe5f0;
+}}
+button.code-copy {{
+  background-image: none;
+  background-color: transparent;
+  border: 1px solid #2a3140;
+  border-radius: 4px;
+  color: #9aa4b5;
+  font-size: 9px;
+  min-height: 0;
+  min-width: 0;
+  padding: 0 6px;
+}}
+button.code-copy:hover {{ color: #dfe5f0; border-color: #3a4354; }}
 .busy-text {{ color: {INFO}; }}
 .active-session {{ color: {TRANSLATE}; }}
 .card {{

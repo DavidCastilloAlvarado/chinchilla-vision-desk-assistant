@@ -20,7 +20,7 @@ def test_markup_is_escaped_before_formatting():
     markup = to_pango("<script>alert(1)</script> **bold** `code`")
     assert "&lt;script&gt;" in markup
     assert "<b>bold</b>" in markup
-    assert "<tt>code</tt>" in markup
+    assert '<span font_family="monospace"' in markup and ">code</span>" in markup
 
 
 def test_bullets_are_kept():
@@ -428,3 +428,64 @@ def test_flat_cuts_never_widen_the_panel(tmp_path, count):
     assert minimum <= PANEL_WIDTH
     assert window.get_allocated_width() == PANEL_WIDTH
     window.destroy()
+
+
+def test_a_fenced_answer_renders_code_as_its_own_block():
+    from chinchilla.ui.richtext import CodeBlock
+
+    content = PanelContent()
+    content.start_assistant_turn()
+    content.append_text("Usa esto:\n\n```sql\nSELECT a,\n  b\n")
+    view = content._streaming_label
+    blocks = view.get_children()
+    assert isinstance(blocks[1], CodeBlock)  # code before the fence closes
+    assert blocks[1].lang_label.get_text() == "sql"
+
+    content.append_text("FROM t;\n```\n\n**Listo**")
+    blocks = view.get_children()
+    assert [type(block).__name__ for block in blocks] == ["Label", "CodeBlock", "Label"]
+    assert blocks[1].body.get_text() == "SELECT a,\n  b\nFROM t;"
+    assert "``" not in blocks[0].get_text() and "``" not in blocks[2].get_text()
+    assert "<b>Listo</b>" in blocks[2].get_label()
+    content.finish_assistant_turn()
+
+
+def test_code_copy_puts_the_code_on_the_clipboard():
+    from chinchilla.ui.markdown import Block
+    from chinchilla.ui.richtext import CodeBlock
+
+    block = CodeBlock(Block("code", "SELECT 1;", "sql"))
+    block.copy()
+    clipboard = Gtk.Clipboard.get_default(block.get_display())
+
+    assert clipboard.wait_for_text() == "SELECT 1;"
+    assert block.copy_button.get_label() == "Copied"
+
+
+def test_an_error_turn_is_plain_and_red():
+    content = PanelContent()
+    content.start_assistant_turn()
+    view = content._streaming_label
+    content.finish_assistant_turn(error="HTTP 500 **not markdown**")
+    label = view.get_children()[0]
+
+    assert label.get_text() == "HTTP 500 **not markdown**"
+    assert label.get_style_context().has_class("error-text")
+
+
+def test_streaming_only_rerenders_the_growing_block(monkeypatch):
+    from chinchilla.ui import richtext
+
+    calls = []
+    original = richtext.markdown.prose_markup
+    monkeypatch.setattr(
+        richtext.markdown, "prose_markup", lambda body: calls.append(body) or original(body)
+    )
+    content = PanelContent()
+    content.start_assistant_turn()
+    content.append_text("First paragraph.\n\n```sql\nSELECT")
+    content.append_text(" 1,\n  2")
+    content.append_text("\nFROM t")
+
+    assert calls == ["First paragraph."]
+    content.finish_assistant_turn()
