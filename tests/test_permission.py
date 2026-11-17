@@ -1,6 +1,13 @@
 import pytest
 
 from chinchilla.core import permission
+from chinchilla import system
+
+
+@pytest.fixture(autouse=True)
+def _gnome(monkeypatch):
+    """These cover the GNOME implementation; macOS has its own in test_macos."""
+    monkeypatch.setattr(system, "is_mac", lambda: False)
 
 
 def test_app_id_reads_the_systemd_scope():

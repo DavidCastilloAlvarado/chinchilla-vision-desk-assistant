@@ -5,6 +5,14 @@ import stat
 import pytest
 
 from chinchilla import shortcuts
+from chinchilla import system
+
+
+@pytest.fixture(autouse=True)
+def _gnome(monkeypatch):
+    """These cover the GNOME implementation; macOS has its own in test_macos."""
+    monkeypatch.setattr(system, "is_mac", lambda: False)
+
 
 FAKE = '''#!/usr/bin/env python3
 import json

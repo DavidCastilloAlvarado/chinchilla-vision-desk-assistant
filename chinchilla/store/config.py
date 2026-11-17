@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .. import paths
+from .. import paths, system
 from ..core.prompts import DEFAULT_ACTIONS
 
 PROVIDERS: dict[str, dict[str, str]] = {
@@ -56,6 +56,12 @@ CUSTOM_FIELDS = {"base_url": "LLM_BASE_URL", "model": "LLM_MODEL"}
 
 MCP_PACKAGE = "dsh-google-chrome-search"
 DEFAULT_CHROME = "/usr/bin/google-chrome"
+MAC_BROWSERS = (
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+)
 DEFAULT_PROFILE_DIR = "~/.dsh-chrome-google"
 # ------------------------------------------------------------ web search tools
 
@@ -69,11 +75,31 @@ def find_node_bin(name: str) -> str | None:
     folders = [home / ".local/node/bin", home / ".volta/bin", home / ".bun/bin"]
     for pattern in (".nvm/versions/node/*/bin", ".fnm/node-versions/*/installation/bin"):
         folders.extend(sorted(home.glob(pattern), reverse=True))
+    if system.is_mac():
+        # Homebrew on Apple silicon and on Intel; apps started by launchd
+        # do not inherit the shell PATH that has them
+        folders.extend([Path("/opt/homebrew/bin"), Path("/usr/local/bin")])
     for folder in folders:
         candidate = folder / name
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
     return None
+
+
+def default_chrome() -> str:
+    if system.is_mac():
+        for candidate in MAC_BROWSERS:
+            if Path(candidate).is_file():
+                return candidate
+        for candidate in MAC_BROWSERS:
+            user_copy = Path.home() / candidate.lstrip("/")
+            if user_copy.is_file():
+                return str(user_copy)
+        return MAC_BROWSERS[0]
+    if Path(DEFAULT_CHROME).is_file():
+        return DEFAULT_CHROME
+    found = shutil.which("google-chrome") or shutil.which("chromium") or ""
+    return found or DEFAULT_CHROME
 
 
 def default_mcp_command() -> list[str]:
@@ -83,12 +109,8 @@ def default_mcp_command() -> list[str]:
 
 
 def default_mcp_env() -> dict[str, str]:
-    chrome = DEFAULT_CHROME
-    if not Path(chrome).is_file():
-        found = shutil.which("google-chrome") or shutil.which("chromium") or ""
-        chrome = found or DEFAULT_CHROME
     return {
-        "CHROME_PATH": chrome,
+        "CHROME_PATH": default_chrome(),
         "GSEARCH_PROFILE": str(Path(os.path.expanduser(DEFAULT_PROFILE_DIR))),
     }
 

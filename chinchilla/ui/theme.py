@@ -18,6 +18,7 @@ TEXT_DIM = "#6f7a8e"
 ACCENT = (0.941, 0.706, 0.161)
 ACCENT_HEX = "#f0b429"
 TRANSLATE = "#4c8dff"
+CARET = TRANSLATE
 EXPLAIN = "#a78bfa"
 GRAMMAR = "#34d399"
 SUCCESS = GRAMMAR
@@ -191,18 +192,20 @@ label.source-label {{ font-size: 10.5px; color: #9aa9c2; }}
 }}
 .ask.filled {{ background-color: #161b24; border-color: #3a4354; }}
 .ask.ask-focus {{ border-color: #4c6ea8; }}
-entry.ask-entry {{
+.ask scrolledwindow,
+.ask scrolledwindow viewport {{ background-color: transparent; border: none; }}
+textview.ask-input,
+textview.ask-input text {{
   background-image: none;
   background-color: transparent;
-  border: none;
-  box-shadow: none;
   color: #dfe5f0;
   font-size: 11.5px;
-  padding: 0;
-  min-height: 20px;
+  /* the wireframe's caret: a visible bar in the focus blue, not a hairline */
+  caret-color: {CARET};
+  -gtk-secondary-caret-color: {CARET};
 }}
-entry.ask-entry:focus {{ background-color: transparent; border: none; }}
-entry.ask-entry placeholder {{ color: #6f7a8e; }}
+textview.ask-input {{ -GtkWidget-cursor-aspect-ratio: 0.14; }}
+textview.ask-input text selection {{ background-color: #2f4a78; color: #ffffff; }}
 button.send-btn {{
   background-image: none;
   background-color: {ACCENT_HEX};
@@ -301,6 +304,33 @@ label.muted-label {{ color: {TEXT_MUTED}; font-size: 10.5px; }}
 label.body-label {{ color: #dde2eb; font-size: 12px; }}
 label.title-label {{ color: {TEXT}; font-weight: 600; }}
 .error-text {{ color: {DANGER}; }}
+label.error-text {{ color: {DANGER}; }}
+
+/* ------------------------------------------------------------ code blocks */
+.code-block {{
+  background-color: #0f1318;
+  border: 1px solid #262d39;
+  border-radius: 6px;
+  padding: 4px 8px 6px 8px;
+}}
+label.code-lang {{ color: #6f7a8e; font-size: 9px; font-weight: 600; }}
+label.code-text {{
+  font-family: "SF Mono", Menlo, "DejaVu Sans Mono", "Ubuntu Mono", monospace;
+  font-size: 10.5px;
+  color: #dfe5f0;
+}}
+button.code-copy {{
+  background-image: none;
+  background-color: transparent;
+  border: 1px solid #2a3140;
+  border-radius: 4px;
+  color: #9aa4b5;
+  font-size: 9px;
+  min-height: 0;
+  min-width: 0;
+  padding: 0 6px;
+}}
+button.code-copy:hover {{ color: #dfe5f0; border-color: #3a4354; }}
 .busy-text {{ color: {INFO}; }}
 .active-session {{ color: {TRANSLATE}; }}
 .card {{

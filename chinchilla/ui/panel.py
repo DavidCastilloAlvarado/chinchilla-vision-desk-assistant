@@ -9,20 +9,27 @@ field and a footer with the provider and the turn buttons.
 from __future__ import annotations
 
 import html
-import re
 import time
 from pathlib import Path
 from typing import Callable
 
+from .. import system
 from ..core.search import host_of
 from ..store import config
 from ..core.thread import Capture, Source, Turn, Usage
 from . import theme
 from .gtk import Gdk, GdkPixbuf, GLib, Gtk, Pango
+from .markdown import to_pango  # noqa: F401  kept for single-label callers
+from .richtext import MarkdownView
 from .widgets import place_knob
 
 PANEL_WIDTH = 404
 PADDING = 12
+# room for the cuts of one turn: the panel minus its padding, the avatar column
+# and some slack for the bubble's CSS and the overlay scrollbar
+CROP_ROW_WIDTH = PANEL_WIDTH - 2 * PADDING - 17 - 8 - 35
+CROP_SPACING = 6
+CROP_HEIGHT = 50
 
 DEFAULT_ACTIONS = [
     ("translate", "Translate"),
@@ -30,23 +37,8 @@ DEFAULT_ACTIONS = [
     ("grammar", "Fix grammar"),
 ]
 
-_CODE = re.compile(r"`([^`]+)`")
-_BOLD = re.compile(r"\*\*([^*]+)\*\*")
-_ITALIC = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)")
-
-
-def to_pango(text: str) -> str:
-    """Very small markdown subset -> pango markup, always escaped first."""
-    escaped = html.escape(text or "")
-    escaped = _CODE.sub(r"<tt>\1</tt>", escaped)
-    escaped = _BOLD.sub(r"<b>\1</b>", escaped)
-    escaped = _ITALIC.sub(r"<i>\1</i>", escaped)
-    lines = []
-    for line in escaped.splitlines():
-        if line.startswith("- "):
-            line = "  \u2022 " + line[2:]
-        lines.append(line)
-    return "\n".join(lines)
+# the composer grows with its text up to this many lines, then scrolls
+COMPOSER_MAX_LINES = 10
 
 
 def clock(timestamp: float) -> str:
@@ -87,21 +79,33 @@ def usage_text(usage: Usage | None) -> str:
     )
 
 
-def load_image(path: str, height: int = 34) -> Gtk.Image | None:
+def fit_size(width: int, height: int, max_height: int, max_width: int | None = None) -> tuple[int, int]:
+    """Scale to `max_height`, then shrink further if that is wider than `max_width`.
+
+    Scaling by height alone made a flat strip (1684x156 is 540 px wide at 50
+    px tall) wider than the panel, and GTK grew the window off the screen.
+    """
+    scale = max_height / max(1, height)
+    if max_width is not None and width * scale > max_width:
+        scale = max_width / max(1, width)
+    return max(1, round(width * scale)), max(1, round(height * scale))
+
+
+def load_image(path: str, height: int = 34, max_width: int | None = None) -> Gtk.Image | None:
     if not path or not Path(path).is_file():
         return None
     try:
         pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
     except Exception:
         return None
-    width = max(1, int(pixbuf.get_width() * height / max(1, pixbuf.get_height())))
+    width, height = fit_size(pixbuf.get_width(), pixbuf.get_height(), height, max_width)
     scaled = pixbuf.scale_simple(width, height, GdkPixbuf.InterpType.BILINEAR)
     return Gtk.Image.new_from_pixbuf(scaled)
 
 
-def load_thumbnail(path: str, size: int = 40) -> Gtk.Widget | None:
+def load_thumbnail(path: str, size: int = 40, max_width: int | None = None) -> Gtk.Widget | None:
     """Small preview of a capture, used in the header and the thread."""
-    image = load_image(path, size)
+    image = load_image(path, size, max_width)
     if image is not None:
         image.get_style_context().add_class("thumb")
     return image
@@ -387,26 +391,53 @@ class PanelContent(Gtk.Box):
         self.ask_box.get_style_context().add_class("ask")
         self.ask_box.set_size_request(-1, 34)
 
-        self.entry = Gtk.Entry()
-        self.entry.set_has_frame(False)
-        self.entry.set_placeholder_text("Ask anything about this capture\u2026")
-        self.entry.get_style_context().add_class("ask-entry")
-        self.entry.set_valign(Gtk.Align.CENTER)
-        self.entry.connect("activate", lambda *_: self._submit())
-        self.entry.connect("changed", lambda *_: self._sync_ask_state())
-        self.entry.connect("focus-in-event", lambda *_: self._sync_ask_state())
-        self.entry.connect("focus-out-event", lambda *_: self._sync_ask_state())
-        self.ask_box.pack_start(self.entry, True, True, 0)
+        # a text view, not an entry: questions span lines, and the box grows
+        # with them up to COMPOSER_MAX_LINES before it scrolls
+        self.composer = Gtk.TextView()
+        self.composer.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.composer.set_accepts_tab(False)
+        self.composer.set_top_margin(8)
+        self.composer.set_bottom_margin(8)
+        self.composer.get_style_context().add_class("ask-input")
+        self.composer.connect("key-press-event", self._on_composer_key)
+        self.composer.connect("focus-in-event", lambda *_: self._sync_ask_state())
+        self.composer.connect("focus-out-event", lambda *_: self._sync_ask_state())
+        self.composer.get_buffer().connect("changed", lambda *_: self._sync_ask_state())
+
+        self.composer_scroll = Gtk.ScrolledWindow()
+        self.composer_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.composer_scroll.set_propagate_natural_height(True)
+        self.composer_scroll.set_max_content_height(self._composer_max_height())
+        self.composer_scroll.add(self.composer)
+
+        self.placeholder = Gtk.Label(label="Ask anything about this capture\u2026")
+        self.placeholder.set_xalign(0)
+        self.placeholder.set_halign(Gtk.Align.START)
+        self.placeholder.set_valign(Gtk.Align.START)
+        self.placeholder.set_margin_top(8)
+        self.placeholder.get_style_context().add_class("ask-placeholder")
+        # shown only by _sync_ask_state, not by every show_all() of the panel
+        self.placeholder.set_no_show_all(True)
+        composer_stack = Gtk.Overlay()
+        composer_stack.add(self.composer_scroll)
+        composer_stack.add_overlay(self.placeholder)
+        # clicks on the hint reach the text view underneath
+        composer_stack.set_overlay_pass_through(self.placeholder, True)
+        self.ask_box.pack_start(composer_stack, True, True, 0)
 
         self.send_button = Gtk.Button(label="\u21b5")
         self.send_button.set_relief(Gtk.ReliefStyle.NONE)
         self.send_button.get_style_context().add_class("send-btn")
-        self.send_button.set_valign(Gtk.Align.CENTER)
+        # stays on the last line while the box grows, like a chat app
+        self.send_button.set_valign(Gtk.Align.END)
+        self.send_button.set_margin_bottom(5)
         self.send_button.set_size_request(24, 24)
-        self.send_button.set_tooltip_text("Send (Enter)")
+        self.send_button.set_tooltip_text("Send (Enter) \u00b7 new line (Shift+Enter)")
         self.send_button.connect("clicked", lambda *_: self._submit())
         self.ask_box.pack_end(self.send_button, False, False, 0)
         box.pack_start(self.ask_box, False, False, 0)
+
+        self._sync_ask_state()
 
         usage_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.usage_label = Gtk.Label(label="")
@@ -515,7 +546,8 @@ class PanelContent(Gtk.Box):
         for child in self._thumbs.get_children():
             self._thumbs.remove(child)
         recent = captures[-1] if captures else None
-        image = load_thumbnail(recent.path, 32) if recent is not None else None
+        # the header slot is 46 px wide; a wider preview would be cut off
+        image = load_thumbnail(recent.path, 32, 44) if recent is not None else None
         if image is not None:
             self._thumbs.pack_start(image, False, False, 0)
         else:
@@ -567,7 +599,7 @@ class PanelContent(Gtk.Box):
         if self._streaming_label is None:
             self.start_assistant_turn()
         self._streaming_text += delta
-        self._streaming_label.set_markup(to_pango(self._streaming_text))
+        self._streaming_label.set_markdown(self._streaming_text)
         if self._reasoning_expander is not None:
             # the answer began: fold the thinking away, it stays one click away
             self._reasoning_expander.set_expanded(False)
@@ -598,10 +630,10 @@ class PanelContent(Gtk.Box):
         self, sources: list[Source] | None = None, error: str | None = None
     ) -> None:
         if self._streaming_label is not None:
-            text = error or self._streaming_text or "\u2026"
             if error:
-                self._streaming_label.get_style_context().add_class("error-text")
-            self._streaming_label.set_markup(to_pango(text))
+                self._streaming_label.set_plain(error, "error-text")
+            else:
+                self._streaming_label.set_markdown(self._streaming_text or "\u2026")
             self._last_answer = self._streaming_text or (error or "")
         if sources and self._streaming_turn is not None:
             self._streaming_turn.add_sources(sources)
@@ -669,13 +701,38 @@ class PanelContent(Gtk.Box):
         self.web_switch.set_active(bool(enabled), notify=False)
 
     def composer_text(self) -> str:
-        return self.entry.get_text().strip()
+        buffer = self.composer.get_buffer()
+        start, end = buffer.get_bounds()
+        return buffer.get_text(start, end, False).strip()
+
+    def set_composer_text(self, text: str) -> None:
+        self.composer.get_buffer().set_text(text)
 
     def clear_composer(self) -> None:
-        self.entry.set_text("")
+        self.set_composer_text("")
 
     def focus_composer(self) -> None:
-        self.entry.grab_focus()
+        self.composer.grab_focus()
+
+    def _composer_max_height(self) -> int:
+        """Pixel height of COMPOSER_MAX_LINES lines in the composer's font."""
+        layout = self.composer.create_pango_layout("Ag")
+        line = layout.get_pixel_size()[1] or 15
+        return line * COMPOSER_MAX_LINES + self.composer.get_top_margin() + self.composer.get_bottom_margin()
+
+    def _on_composer_key(self, _view, event) -> bool:
+        """Enter sends, Shift+Enter breaks the line (Ctrl/Cmd+Enter is Retry)."""
+        if event.keyval not in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            return False
+        # an input method (CJK, macOS marked text) may own this Enter: it
+        # confirms the composition and must not send a half-typed question
+        # a generic Gdk.Event (synthesized) carries its key fields in `.key`
+        if self.composer.im_context_filter_keypress(getattr(event, "key", event)):
+            return True
+        if event.state & (Gdk.ModifierType.SHIFT_MASK | Gdk.ModifierType.CONTROL_MASK | _primary_mask()):
+            return False
+        self._submit()
+        return True
 
     def copy_last(self) -> None:
         text = self._last_answer.strip()
@@ -760,15 +817,11 @@ class PanelContent(Gtk.Box):
         if turn.reasoning:
             bubble.pack_start(self._reasoning_block(turn.reasoning), False, False, 0)
 
-        label = Gtk.Label()
-        label.set_line_wrap(True)
-        label.set_xalign(0)
-        label.set_selectable(True)
-        label.get_style_context().add_class("turn-body")
+        label = MarkdownView(on_link=self._on_source_link)
         if turn.text:
-            label.set_markup(to_pango(turn.text))
+            label.set_markdown(turn.text)
         else:
-            label.set_text("\u2026")
+            label.set_plain("\u2026")
         bubble.pack_start(label, False, False, 0)
 
         if turn.sources:
@@ -812,20 +865,28 @@ class PanelContent(Gtk.Box):
         return expander
 
     def _crop_row(self, capture_ids: list[str]) -> Gtk.Widget:
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=CROP_SPACING)
         row.set_margin_top(2)
         row.set_margin_bottom(2)
-        for capture_id in capture_ids[-3:]:
-            capture = next((item for item in self._captures if item.id == capture_id), None)
-            if capture is None:
-                continue
-            row.pack_start(self._crop_mini(capture), False, False, 0)
+        captures = [
+            capture
+            for capture_id in capture_ids[-3:]
+            for capture in self._captures
+            if capture.id == capture_id
+        ]
+        # share the row so even three wide cuts never push the panel wider
+        max_width = (CROP_ROW_WIDTH - CROP_SPACING * max(0, len(captures) - 1)) // max(
+            1, len(captures)
+        )
+        for capture in captures:
+            row.pack_start(self._crop_mini(capture, max_width), False, False, 0)
         return row
 
-    def _crop_mini(self, capture: Capture) -> Gtk.Widget:
+    def _crop_mini(self, capture: Capture, max_width: int = CROP_ROW_WIDTH) -> Gtk.Widget:
         overlay = Gtk.Overlay()
-        overlay.set_size_request(88, 50)
-        image = load_image(capture.path, 50)
+        image = load_image(capture.path, CROP_HEIGHT, max_width)
+        if image is None:
+            overlay.set_size_request(min(88, max_width), CROP_HEIGHT)
         if image is not None:
             image.get_style_context().add_class("crop-mini")
             overlay.add(image)
@@ -889,11 +950,13 @@ class PanelContent(Gtk.Box):
     def _sync_ask_state(self) -> None:
         """Highlight the box once it holds text or has the focus, like the wireframe."""
         context = self.ask_box.get_style_context()
+        buffer = self.composer.get_buffer()
+        self.placeholder.set_visible(buffer.get_char_count() == 0)
         if self.composer_text():
             context.add_class("filled")
         else:
             context.remove_class("filled")
-        if self.entry.has_focus():
+        if self.composer.has_focus():
             context.add_class("ask-focus")
         else:
             context.remove_class("ask-focus")
@@ -906,6 +969,15 @@ class PanelContent(Gtk.Box):
             return
         self.clear_composer()
         self.on_send(text)
+
+
+def _primary_mask() -> Gdk.ModifierType:
+    """Command on macOS, Control elsewhere; the panel accepts both."""
+    display = Gdk.Display.get_default()
+    if display is None:
+        return Gdk.ModifierType.CONTROL_MASK
+    keymap = Gdk.Keymap.get_for_display(display)
+    return keymap.get_modifier_mask(Gdk.ModifierIntent.PRIMARY_ACCELERATOR)
 
 
 class PanelWindow(Gtk.Window):
@@ -951,7 +1023,7 @@ class PanelWindow(Gtk.Window):
         return isinstance(focused, (Gtk.Entry, Gtk.TextView))
 
     def _on_key(self, _widget, event) -> bool:
-        ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
+        ctrl = bool(event.state & (Gdk.ModifierType.CONTROL_MASK | _primary_mask()))
         content = self.content
         if self._escape(event):
             return True
@@ -1016,6 +1088,10 @@ class PanelWindow(Gtk.Window):
         self.place(screen_width, screen_height)
         self.show_all()
         self.present_with_time(Gdk.CURRENT_TIME)
+        if system.is_mac():
+            from ..macos import cocoa
+
+            cocoa.keep_visible(self)
         self.grab_focus()
 
 

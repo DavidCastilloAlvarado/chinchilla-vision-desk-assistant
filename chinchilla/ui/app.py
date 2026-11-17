@@ -7,7 +7,7 @@ import threading
 from typing import Callable
 
 
-from .. import log, paths, shortcuts
+from .. import log, paths, shortcuts, system
 from ..core import capture as capture_module
 from ..core import copilot as copilot_module
 from ..core import permission
@@ -22,6 +22,7 @@ LOGGER = log.get("app")
 APP_ID = "io.github.chinchilla.App"
 PUMP_MS = 60
 CAPTURE_DELAY_MS = 220
+CLIPBOARD_POLL_MS = 300
 _DONE = AgentEvent("done")
 
 
@@ -55,6 +56,11 @@ class App(Gtk.Application):
         self._stop = threading.Event()
         self.status = ""
         self.capture_parent = ""
+        self.hotkey = None
+        self.listener = None
+        self._clipboard_since = 0
+        self._clipboard_timer: int | None = None
+        self._duplicate = False
 
     # ------------------------------------------------------------ application
 
@@ -65,10 +71,81 @@ class App(Gtk.Application):
 
     def build_ui(self) -> None:
         paths.ensure_dirs()
+        if system.is_mac():
+            from ..macos import cocoa
+
+            cocoa.set_accessory()
+            if not self._claim_instance():
+                return
         self._build_window()
         self._install_tray()
+        self._sync_hotkey()
+
+    # ------------------------------------------------------------------ macOS
+
+    def _claim_instance(self) -> bool:
+        """Answer later launches, or hand over to the process that already does.
+
+        GNOME gets this from GApplication over D-Bus. A launch that lost the
+        race stops here, before it draws a menu bar icon or grabs the hotkey.
+        """
+        from .. import instance
+
+        listener = instance.Listener(self._on_instance_command)
+        if listener.start():
+            self.listener = listener
+            return True
+        if listener.taken:
+            command = "capture" if self.capture_on_activate else "daemon"
+            instance.forward(command, listener.path)
+            LOGGER.info("another instance is running; handed over %r", command)
+            self._duplicate = True
+            GLib.idle_add(self.quit_app)
+            return False
+        # the socket could not be created; keep working without it
+        return True
+
+    def _sync_hotkey(self) -> None:
+        if not system.is_mac():
+            return
+        from ..macos import hotkey as hotkey_module
+
+        binding = self.settings.hotkey or shortcuts.DEFAULT_BINDING
+        if self.hotkey is not None and self.hotkey.accelerator == binding:
+            return
+        if self.hotkey is None:
+            self.hotkey = hotkey_module.GlobalHotkey(
+                lambda: GLib.idle_add(self._on_hotkey)
+            )
+        try:
+            self.hotkey.register(binding)
+        except hotkey_module.HotkeyError as exc:
+            LOGGER.warning("global hotkey unavailable: %s", exc)
+            self._status(f"hotkey unavailable: {exc}", "error")
+
+    def _on_hotkey(self) -> bool:
+        LOGGER.info("invoked: hotkey")
+        self.refresh_config()
+        self.start_capture()
+        return False
+
+    def _on_instance_command(self, command: str) -> None:
+        if command == "capture":
+            self._on_hotkey()
+        elif command == "show":
+            self.refresh_config()
+            self.show_panel()
+
+    def _on_panel_hidden(self, *_args) -> None:
+        """Give the keyboard back to the app that was in front before the hotkey."""
+        if self.settings_window is None and self.overlay is None:
+            from ..macos import cocoa
+
+            cocoa.yield_focus()
 
     def do_activate(self) -> None:
+        if self._duplicate:
+            return
         self.refresh_config()
         if not self.capture_on_activate:
             # the daemon starts without capturing, later activations do capture
@@ -92,6 +169,8 @@ class App(Gtk.Application):
             on_effort=self.set_reasoning_effort,
         )
         self.window.connect("destroy", lambda *_: self.quit())
+        if system.is_mac():
+            self.window.connect("hide", self._on_panel_hidden)
         self.refresh_panel()
 
     def _install_tray(self) -> None:
@@ -140,6 +219,7 @@ class App(Gtk.Application):
             LOGGER.info("settings reloaded from disk")
         self.agent = None
         self._sync_provider_label()
+        self._sync_hotkey()
         return changed
 
     def _provider_label(self) -> str:
@@ -218,7 +298,11 @@ class App(Gtk.Application):
         allowed, detail = permission.ensure()
         if not allowed:
             LOGGER.warning("silent capture unavailable: %s", detail)
-            GLib.idle_add(self._run_area_selector, detail)
+            if system.is_mac():
+                # every capture this process starts would come back blank
+                GLib.idle_add(self._wait_for_clipboard_cut)
+            else:
+                GLib.idle_add(self._run_area_selector, detail)
             return
         try:
             grab = capture_module.grab_screen(parent=self.capture_parent)
@@ -235,13 +319,65 @@ class App(Gtk.Application):
         return self.window.parent_handle()
 
     def _run_area_selector(self, reason: str = "") -> bool:
-        """Fallback: let the desktop draw its own selector, like macOS does."""
+        """Fallback: let the desktop draw its own selector."""
         self.show_panel()
         if reason:
             LOGGER.info("area selector fallback: %s", reason)
-        self._status("drag the area to capture in the GNOME selector")
+        self._status("drag the area to capture in the desktop selector")
         threading.Thread(target=self._area_worker, daemon=True).start()
         return False
+
+    def _wait_for_clipboard_cut(self) -> bool:
+        """macOS without Screen Recording: take the user's own ⌘⌃⇧4 cuts."""
+        self.show_panel()
+        self._status(f"no Screen Recording grant: {capture_module.CLIPBOARD_HINT}")
+        return False
+
+    def _clipboard_handoff(self) -> bool:
+        """True when cuts have to come from the clipboard (macOS, no grant)."""
+        return system.is_mac() and not permission.is_granted()
+
+    def _watch_clipboard(self) -> None:
+        """Take every ⌘⌃⇧4 cut for as long as the panel is open.
+
+        Only the first cut after the hotkey used to arrive: the watch ended
+        with it, so a second cut in the same session went nowhere.
+        """
+        if self._clipboard_timer is not None:
+            return
+        from ..macos import pasteboard
+
+        # only what is copied from now on; an older clipboard is not a cut
+        self._clipboard_since = pasteboard.change_count()
+        self._clipboard_timer = GLib.timeout_add(CLIPBOARD_POLL_MS, self._poll_clipboard)
+
+    def _poll_clipboard(self) -> bool:
+        from ..macos import pasteboard
+
+        if self.window is None or not self.window.get_visible():
+            self._clipboard_timer = None
+            return False
+        try:
+            count = pasteboard.change_count()
+            if count == self._clipboard_since:
+                return True
+            self._clipboard_since = count
+            image = pasteboard.read_image()
+            if image is None:
+                return True  # copied text, not a cut
+            LOGGER.info("clipboard cut %sx%s", image.width, image.height)
+            self.add_capture(image)
+        except Exception as exc:
+            # a raising GLib callback is dropped for good, and this watch is
+            # the only way a cut arrives without Screen Recording
+            LOGGER.exception("clipboard cut failed")
+            self._status(f"cannot take that cut: {exc}", "error")
+            return True
+        self._status(
+            f"cut added ({image.width}x{image.height}); "
+            "\u2318\u2303\u21e74 adds another"
+        )
+        return True
 
     def _area_worker(self) -> None:
         try:
@@ -254,15 +390,19 @@ class App(Gtk.Application):
         GLib.idle_add(self.add_capture, grab.image)
 
     def _run_overlay(self, image) -> bool:
-        from .overlay import run_overlay
+        from .overlay import run_overlay, screen_size
 
-        rect = run_overlay(background=image)
+        self.overlay = True
+        try:
+            rect = run_overlay(background=image)
+        finally:
+            self.overlay = None
         if rect is None:
             self._status("capture cancelled")
             self.show_panel()
             return False
         try:
-            cropped = capture_module.crop(image, rect, (image.width, image.height))
+            cropped = capture_module.crop(image, rect, screen_size())
         except Exception as exc:
             self._status(f"cannot crop: {exc}", "error")
             self.show_panel()
@@ -371,6 +511,9 @@ class App(Gtk.Application):
 
     def _pump(self) -> bool:
         finished = False
+        # text deltas of one tick are rendered once: each render re-parses the
+        # markdown, so one call per token would grow with the answer
+        text: list[str] = []
         while True:
             try:
                 event = self.events.get_nowait()
@@ -379,7 +522,15 @@ class App(Gtk.Application):
             if event is _DONE:
                 finished = True
                 continue
+            if event.type == "text":
+                text.append(event.text)
+                continue
+            if text:
+                self._handle(AgentEvent("text", text="".join(text)))
+                text = []
             self._handle(event)
+        if text:
+            self._handle(AgentEvent("text", text="".join(text)))
         if finished:
             self._finish_turn()
             return False
@@ -446,10 +597,16 @@ class App(Gtk.Application):
             return
         monitor = display.get_primary_monitor() or display.get_monitor(0)
         geometry = monitor.get_geometry()
+        if system.is_mac():
+            from ..macos import cocoa
+
+            cocoa.activate()
         if not self.window.get_visible():
             self.window.show_at(geometry.width, geometry.height)
         else:
             self.window.present_with_time(Gdk.CURRENT_TIME)
+        if self._clipboard_handoff():
+            self._watch_clipboard()
 
     def hide_panel(self) -> None:
         if self.window is not None:
@@ -461,6 +618,10 @@ class App(Gtk.Application):
         if self.settings_window is None:
             self.settings_window = SettingsWindow(self.settings, on_save=self._apply_settings)
             self.settings_window.connect("destroy", self._forget_settings_window)
+        if system.is_mac():
+            from ..macos import cocoa
+
+            cocoa.activate()
         self.settings_window.show_all()
         self.settings_window.present()
 
@@ -470,10 +631,20 @@ class App(Gtk.Application):
     def _apply_settings(self, settings: config.Settings) -> None:
         self.settings = settings
         self._sync_provider_label()
+        self._sync_hotkey()
         self.agent = None
         self._status("settings saved")
 
     def shutdown(self) -> None:
+        if self._clipboard_timer is not None:
+            GLib.source_remove(self._clipboard_timer)
+            self._clipboard_timer = None
+        if self.listener is not None:
+            self.listener.stop()
+            self.listener = None
+        if self.hotkey is not None:
+            self.hotkey.close()
+            self.hotkey = None
         if self.tray is not None:
             self.tray.remove()
             self.tray = None
@@ -492,6 +663,13 @@ def run_app(argv: list[str] | None = None, capture: bool = True) -> int:
     from ..runtime import ensure_gdk_backend
 
     ensure_gdk_backend()
+    if system.is_mac():
+        from .. import instance
+
+        # no session bus on macOS, so GApplication cannot find the running copy
+        if instance.forward("capture" if capture else "daemon"):
+            LOGGER.info("handed over to the running instance")
+            return 0
     app = App(capture_on_activate=capture)
     return app.run([*(argv or [])])
 

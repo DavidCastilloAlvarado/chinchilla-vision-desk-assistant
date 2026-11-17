@@ -5,13 +5,16 @@ already owns the ``screenshot`` permission. The portal derives the app id from
 the systemd scope, so Chinchilla looks up its own id and records the grant
 once; after that ``Ctrl+Alt+A`` captures without a dialog and without the
 desktop's own selector.
+
+On macOS the same functions answer for the Screen Recording grant instead,
+which the user gives once in System Settings.
 """
 
 from __future__ import annotations
 
 import re
 
-from .. import log
+from .. import log, system
 
 LOGGER = log.get("permission")
 
@@ -84,6 +87,10 @@ def permissions(target: str | None = None) -> list[str]:
 
 
 def is_granted(target: str | None = None) -> bool:
+    if system.is_mac():
+        from ..macos import tcc
+
+        return tcc.is_granted()
     try:
         return GRANTED in permissions(target)
     except PermissionError_:
@@ -92,6 +99,11 @@ def is_granted(target: str | None = None) -> bool:
 
 def grant(target: str | None = None) -> bool:
     """Records the screenshot grant for our app id."""
+    if system.is_mac():
+        from ..macos import tcc
+
+        # macOS only lets the user grant it; this shows the system prompt once
+        return tcc.request()
     name = app_id() if target is None else target
     try:
         _call("SetPermission", "(sbssas)", (TABLE, True, ENTRY, name, [GRANTED]))
@@ -104,6 +116,13 @@ def grant(target: str | None = None) -> bool:
 
 def revoke(target: str | None = None) -> bool:
     """Forgets the grant so the next capture asks the desktop again."""
+    if system.is_mac():
+        from ..macos import tcc
+
+        # only the user can take it back; open the pane where the switch is
+        LOGGER.info("Screen Recording is revoked in %s", tcc.PANE)
+        tcc.open_settings()
+        return False
     name = app_id() if target is None else target
     try:
         _call("DeletePermission", "(sbs)", (TABLE, ENTRY, name))
@@ -116,6 +135,8 @@ def revoke(target: str | None = None) -> bool:
 
 def ensure() -> tuple[bool, str]:
     """Makes sure a silent screenshot is allowed; returns (ok, detail)."""
+    if system.is_mac():
+        return _ensure_mac()
     name = app_id()
     try:
         stored = permissions()
@@ -128,7 +149,33 @@ def ensure() -> tuple[bool, str]:
     return True, f"granted for {name!r}"
 
 
+_mac_requested = False
+
+
+def _ensure_mac() -> tuple[bool, str]:
+    global _mac_requested
+    from ..macos import tcc
+
+    if tcc.is_granted():
+        return True, "Screen Recording granted"
+    # once per process: on a managed Mac the prompt asks for an admin, and
+    # repeating it on every hotkey press would only nag
+    if not _mac_requested:
+        _mac_requested = True
+        tcc.request()
+    return False, (
+        f"Screen Recording is not granted: allow it in {tcc.PANE}, "
+        "then quit and restart chinchilla (or the terminal that runs it)"
+    )
+
+
 def describe() -> str:
+    if system.is_mac():
+        from ..macos import tcc
+
+        if tcc.is_granted():
+            return "granted (Screen Recording)"
+        return f"missing (Screen Recording: {tcc.PANE})"
     name = app_id()
     try:
         stored = permissions()

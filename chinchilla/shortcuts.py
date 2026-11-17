@@ -1,12 +1,21 @@
-"""GNOME custom keybindings for the global capture shortcut."""
+"""The global capture shortcut.
+
+GNOME: a custom keybinding in `gsettings` that runs `chinchilla capture
+--panel`. macOS: there is no keybinding daemon to hand a command to, so a login
+agent keeps `chinchilla daemon` running and that process owns the hotkey
+(`chinchilla/macos/hotkey.py`); the binding itself lives in `settings.json`.
+"""
 
 from __future__ import annotations
 
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+
+from . import system
 
 MEDIA_KEYS = "org.gnome.settings-daemon.plugins.media-keys"
 CUSTOM_KEYBINDING = MEDIA_KEYS + ".custom-keybinding"
@@ -35,6 +44,8 @@ class ShortcutStatus:
             return self.detail or "gsettings not available"
         if not self.installed:
             return "not installed"
+        if self.detail:
+            return f"{self.binding} -> {self.command} ({self.detail})"
         return f"{self.binding} -> {self.command}"
 
 
@@ -71,10 +82,14 @@ def default_command() -> str:
 
 
 def available() -> bool:
+    if system.is_mac():
+        return shutil.which("launchctl") is not None
     return shutil.which("gsettings") is not None
 
 
 def status() -> ShortcutStatus:
+    if system.is_mac():
+        return _mac_status()
     if not available():
         return ShortcutStatus(False, False, detail="gsettings not found")
     try:
@@ -98,6 +113,8 @@ def install(
     name: str = DEFAULT_NAME,
 ) -> ShortcutStatus:
     """Register the slot in GNOME's custom keybindings list."""
+    if system.is_mac():
+        return _mac_install(command, binding)
     command = command or default_command()
     if not available():
         raise ShortcutError("gsettings not found; install it or add the shortcut by hand")
@@ -123,6 +140,9 @@ def reload() -> None:
     list; editing the slot afterwards is not always picked up, which leaves a
     keybinding that silently does nothing.
     """
+    if system.is_mac():
+        _mac_restart()
+        return
     if not available():
         raise ShortcutError("gsettings not found")
     paths = parse_keybindings(_gsettings("get", MEDIA_KEYS, "custom-keybindings"))
@@ -134,6 +154,8 @@ def reload() -> None:
 
 
 def uninstall() -> ShortcutStatus:
+    if system.is_mac():
+        return _mac_uninstall()
     if not available():
         raise ShortcutError("gsettings not found")
     paths = parse_keybindings(_gsettings("get", MEDIA_KEYS, "custom-keybindings"))
@@ -146,4 +168,75 @@ def uninstall() -> ShortcutStatus:
         _gsettings("reset", f"{CUSTOM_KEYBINDING}:{BASE_PATH}", "binding")
     except ShortcutError:
         pass
+    return ShortcutStatus(True, False, detail="removed")
+
+# ---------------------------------------------------------------------- macOS
+
+
+def mac_daemon_command() -> list[str]:
+    """The login agent runs the daemon with this exact interpreter."""
+    return [sys.executable, "-m", "chinchilla", "daemon"]
+
+
+def _mac_binding() -> str:
+    from .store import config
+
+    return config.load_settings().hotkey or DEFAULT_BINDING
+
+
+def _mac_status() -> ShortcutStatus:
+    from .macos import launchagent
+
+    if not available():
+        return ShortcutStatus(False, False, detail="launchctl not found")
+    state = launchagent.state()
+    command = " ".join(state.program or [])
+    if not state.installed:
+        return ShortcutStatus(True, False, detail="no login agent")
+    if not state.loaded:
+        return ShortcutStatus(
+            True, False, binding=_mac_binding(), command=command,
+            detail="login agent written but not loaded: chinchilla shortcuts install",
+        )
+    detail = f"running, pid {state.pid}" if state.running else "loaded, not running"
+    return ShortcutStatus(True, True, binding=_mac_binding(), command=command, detail=detail)
+
+
+def _mac_install(command: str | None, binding: str) -> ShortcutStatus:
+    from .macos import hotkey, launchagent
+    from .store import config
+
+    if not available():
+        raise ShortcutError("launchctl not found")
+    try:
+        hotkey.parse(binding)
+    except hotkey.HotkeyError as exc:
+        raise ShortcutError(str(exc)) from exc
+    settings = config.load_settings()
+    if settings.hotkey != binding:
+        settings.hotkey = binding
+        config.save_settings(settings)
+    program = shlex.split(command) if command else mac_daemon_command()
+    try:
+        launchagent.install(program)
+    except launchagent.LaunchAgentError as exc:
+        raise ShortcutError(f"cannot load the login agent: {exc}") from exc
+    return _mac_status()
+
+
+def _mac_restart() -> None:
+    from .macos import launchagent
+
+    try:
+        launchagent.kickstart(restart=True)
+    except launchagent.LaunchAgentError as exc:
+        raise ShortcutError(str(exc)) from exc
+
+
+def _mac_uninstall() -> ShortcutStatus:
+    from .macos import launchagent
+
+    if not available():
+        raise ShortcutError("launchctl not found")
+    launchagent.uninstall()
     return ShortcutStatus(True, False, detail="removed")

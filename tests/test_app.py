@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 
 import pytest
@@ -9,7 +10,11 @@ from chinchilla.core.agent import Agent
 from chinchilla.store import config, session as session_store
 
 pytestmark = pytest.mark.skipif(
-    not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
+    not (
+        os.environ.get("DISPLAY")
+        or os.environ.get("WAYLAND_DISPLAY")
+        or sys.platform == "darwin"  # Quartz always has a display
+    ),
     reason="needs a display to build GTK objects",
 )
 
@@ -359,6 +364,7 @@ def test_capture_skips_the_portal_without_the_screenshot_permission(xdg, monkeyp
 
     app, _provider = _app()
     seen = {}
+    monkeypatch.setattr(app_module.system, "is_mac", lambda: False)
 
     def should_not_run(**kwargs):
         raise AssertionError("the portal must not be called without permission")
@@ -374,6 +380,128 @@ def test_capture_skips_the_portal_without_the_screenshot_permission(xdg, monkeyp
 
     assert "no permission store" in seen["reason"]
 
+
+
+def test_mac_without_screen_recording_takes_every_clipboard_cut(xdg, monkeypatch):
+    """Every ⌘⌃⇧4 cut arrives while the panel is open, not only the first."""
+    from chinchilla.macos import pasteboard
+    from chinchilla.ui import app as app_module
+
+    app, _provider = _app()
+    board = {"count": 41, "image": None}
+    timers: list = []
+
+    def should_not_run(**kwargs):
+        raise AssertionError("a blank frame must not be grabbed without Screen Recording")
+
+    monkeypatch.setattr(app_module.system, "is_mac", lambda: True)
+    monkeypatch.setattr(app_module.capture_module, "grab_screen", should_not_run)
+    monkeypatch.setattr(app_module.permission, "ensure", lambda: (False, "not granted"))
+    monkeypatch.setattr(app_module.permission, "is_granted", lambda: False)
+    monkeypatch.setattr(app_module.GLib, "idle_add", lambda fn, *args: fn(*args))
+    monkeypatch.setattr(app_module.GLib, "timeout_add", lambda _ms, fn: timers.append(fn) or 99)
+    monkeypatch.setattr(pasteboard, "change_count", lambda: board["count"])
+    monkeypatch.setattr(pasteboard, "read_image", lambda: board["image"])
+
+    def copy(image=None):
+        board["count"] += 1
+        board["image"] = image
+
+    app._capture_worker()  # the hotkey without the grant opens the panel and waits
+    assert app.window.get_visible()
+    assert "\u2318\u2303\u21e74" in app.status
+    assert len(timers) == 1
+    poll = timers[0]
+
+    assert poll() is True  # nothing copied yet
+    copy(Image.new("RGB", (80, 50)))
+    assert poll() is True  # the first cut does not end the watch
+    copy()  # a text copy is not a cut, and is skipped quietly
+    assert poll() is True
+    copy(Image.new("RGB", (300, 40)))
+    assert poll() is True
+
+    assert [(cut.width, cut.height) for cut in app.session.captures] == [(80, 50), (300, 40)]
+    assert len(timers) == 1  # one watch, never restarted by add_capture
+    assert "adds another" in app.status
+
+    app.hide_panel()
+    assert poll() is False  # a hidden panel stops watching
+    assert app._clipboard_timer is None
+
+    app.show_panel()  # shown again, from the menu or the hotkey
+    assert len(timers) == 2
+    app._clipboard_timer = None
+
+
+
+def test_a_failing_clipboard_cut_keeps_the_watch_alive(xdg, monkeypatch):
+    from chinchilla.macos import pasteboard
+    from chinchilla.ui import app as app_module
+
+    app, _provider = _app()
+    board = {"count": 5}
+    app.show_panel()
+    monkeypatch.setattr(pasteboard, "change_count", lambda: board["count"])
+
+    def explode():
+        raise Image.DecompressionBombError("too many pixels")
+
+    monkeypatch.setattr(pasteboard, "read_image", explode)
+    app._clipboard_since = 5
+    board["count"] = 6
+
+    assert app._poll_clipboard() is True  # still watching
+    assert "cannot take that cut" in app.status
+
+    monkeypatch.setattr(pasteboard, "read_image", lambda: Image.new("RGB", (20, 10)))
+    board["count"] = 7
+    assert app._poll_clipboard() is True
+    assert [(cut.width, cut.height) for cut in app.session.captures] == [(20, 10)]
+
+
+def test_the_pump_renders_the_text_of_one_tick_once(xdg, monkeypatch):
+    from chinchilla.core.agent import AgentEvent
+
+    app, _provider = _app()
+    rendered: list[str] = []
+    monkeypatch.setattr(app.window.content, "append_text", rendered.append)
+    for piece in ("Hola", " ", "mundo"):
+        app.events.put(AgentEvent("text", text=piece))
+    app.events.put(AgentEvent("notice", text="searching"))
+    app.events.put(AgentEvent("text", text="!"))
+
+    assert app._pump() is True
+
+    assert rendered == ["Hola mundo", "!"]
+    assert app.status == "searching"
+
+def test_mac_second_launch_hands_over_and_builds_nothing(xdg, monkeypatch):
+    import tempfile
+    from pathlib import Path
+
+    from chinchilla import instance, paths
+    from chinchilla.ui import app as app_module
+
+    # AF_UNIX paths are limited to ~104 bytes on macOS, the xdg tmp path is not
+    folder = Path(tempfile.mkdtemp(prefix="chin", dir="/tmp"))
+    monkeypatch.setattr(paths, "socket_path", lambda: folder / "control.sock")
+    monkeypatch.setattr(app_module.system, "is_mac", lambda: True)
+    forwarded: list[str] = []
+    monkeypatch.setattr(instance, "forward", lambda command, path=None: forwarded.append(command) or True)
+
+    first, _provider = _app()
+    second, _provider = _app()
+
+    assert first.listener is not None and first.window is not None
+    assert second._duplicate is True
+    assert second.window is None and second.tray is None and second.hotkey is None
+    assert forwarded == ["daemon"]
+
+    first.shutdown()
+    for leftover in folder.iterdir():
+        leftover.unlink()
+    folder.rmdir()
 
 def test_picking_a_row_in_the_session_selector_opens_that_session(xdg):
     app, _provider = _app()
