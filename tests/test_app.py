@@ -459,6 +459,23 @@ def test_a_failing_clipboard_cut_keeps_the_watch_alive(xdg, monkeypatch):
     assert app._poll_clipboard() is True
     assert [(cut.width, cut.height) for cut in app.session.captures] == [(20, 10)]
 
+
+def test_the_pump_renders_the_text_of_one_tick_once(xdg, monkeypatch):
+    from chinchilla.core.agent import AgentEvent
+
+    app, _provider = _app()
+    rendered: list[str] = []
+    monkeypatch.setattr(app.window.content, "append_text", rendered.append)
+    for piece in ("Hola", " ", "mundo"):
+        app.events.put(AgentEvent("text", text=piece))
+    app.events.put(AgentEvent("notice", text="searching"))
+    app.events.put(AgentEvent("text", text="!"))
+
+    assert app._pump() is True
+
+    assert rendered == ["Hola mundo", "!"]
+    assert app.status == "searching"
+
 def test_mac_second_launch_hands_over_and_builds_nothing(xdg, monkeypatch):
     import tempfile
     from pathlib import Path

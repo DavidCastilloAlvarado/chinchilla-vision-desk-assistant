@@ -511,6 +511,9 @@ class App(Gtk.Application):
 
     def _pump(self) -> bool:
         finished = False
+        # text deltas of one tick are rendered once: each render re-parses the
+        # markdown, so one call per token would grow with the answer
+        text: list[str] = []
         while True:
             try:
                 event = self.events.get_nowait()
@@ -519,7 +522,15 @@ class App(Gtk.Application):
             if event is _DONE:
                 finished = True
                 continue
+            if event.type == "text":
+                text.append(event.text)
+                continue
+            if text:
+                self._handle(AgentEvent("text", text="".join(text)))
+                text = []
             self._handle(event)
+        if text:
+            self._handle(AgentEvent("text", text="".join(text)))
         if finished:
             self._finish_turn()
             return False
