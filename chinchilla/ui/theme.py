@@ -18,6 +18,7 @@ TEXT_DIM = "#6f7a8e"
 ACCENT = (0.941, 0.706, 0.161)
 ACCENT_HEX = "#f0b429"
 TRANSLATE = "#4c8dff"
+CARET = TRANSLATE
 EXPLAIN = "#a78bfa"
 GRAMMAR = "#34d399"
 SUCCESS = GRAMMAR
@@ -191,18 +192,20 @@ label.source-label {{ font-size: 10.5px; color: #9aa9c2; }}
 }}
 .ask.filled {{ background-color: #161b24; border-color: #3a4354; }}
 .ask.ask-focus {{ border-color: #4c6ea8; }}
-entry.ask-entry {{
+.ask scrolledwindow,
+.ask scrolledwindow viewport {{ background-color: transparent; border: none; }}
+textview.ask-input,
+textview.ask-input text {{
   background-image: none;
   background-color: transparent;
-  border: none;
-  box-shadow: none;
   color: #dfe5f0;
   font-size: 11.5px;
-  padding: 0;
-  min-height: 20px;
+  /* the wireframe's caret: a visible bar in the focus blue, not a hairline */
+  caret-color: {CARET};
+  -gtk-secondary-caret-color: {CARET};
 }}
-entry.ask-entry:focus {{ background-color: transparent; border: none; }}
-entry.ask-entry placeholder {{ color: #6f7a8e; }}
+textview.ask-input {{ -GtkWidget-cursor-aspect-ratio: 0.14; }}
+textview.ask-input text selection {{ background-color: #2f4a78; color: #ffffff; }}
 button.send-btn {{
   background-image: none;
   background-color: {ACCENT_HEX};

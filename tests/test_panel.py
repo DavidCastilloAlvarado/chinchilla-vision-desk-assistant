@@ -37,7 +37,7 @@ def test_quick_action_pill_reports_its_id():
 def test_send_button_passes_the_composer_text():
     sent = []
     content = PanelContent(on_send=sent.append)
-    content.entry.set_text("  hello  ")
+    content.set_composer_text("  hello  ")
     content.send_button.clicked()
     assert sent == ["hello"]
     assert content.composer_text() == ""
@@ -171,7 +171,7 @@ def test_digits_typed_in_the_composer_stay_text():
     window.content.on_prompt = lambda action_id, _label=None: prompts.append(action_id)
     window.show_all()
     try:
-        window.content.entry.grab_focus()
+        window.content.composer.grab_focus()
         window.emit("key-press-event", _key(Gdk.KEY_1))
         typing = window._typing()
     finally:
@@ -197,14 +197,15 @@ def test_busy_panel_offers_stop_and_locks_the_actions():
     assert content.send_button.get_sensitive() is True
 
 
-def test_the_composer_is_a_frameless_entry_inside_the_ask_box():
+def test_the_composer_is_a_multiline_text_view_inside_the_ask_box():
     from chinchilla.ui.panel import PanelContent
 
     content = PanelContent()
 
-    assert content.entry.get_has_frame() is False
-    assert content.entry.get_placeholder_text().startswith("Ask anything")
-    assert content.entry.get_parent() is content.ask_box
+    assert isinstance(content.composer, Gtk.TextView)
+    assert content.composer.get_wrap_mode() == Gtk.WrapMode.WORD_CHAR
+    assert content.placeholder.get_text().startswith("Ask anything")
+    assert content.composer_scroll.is_ancestor(content.ask_box)
     assert content.ask_box.get_size_request() == (-1, 34)
 
 
@@ -430,6 +431,78 @@ def test_flat_cuts_never_widen_the_panel(tmp_path, count):
     window.destroy()
 
 
+
+def _enter(shift=False):
+    from chinchilla.ui.gtk import Gdk
+
+    event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
+    event.keyval = Gdk.KEY_Return
+    event.state = Gdk.ModifierType.SHIFT_MASK if shift else 0
+    return event
+
+
+def test_enter_sends_and_shift_enter_breaks_the_line():
+    from chinchilla.ui.panel import PanelContent
+
+    sent = []
+    content = PanelContent(on_send=sent.append)
+    content.set_composer_text("first line")
+
+    assert content._on_composer_key(content.composer, _enter(shift=True)) is False  # GTK inserts the newline
+    assert sent == []
+
+    content.set_composer_text("first line\nsecond line")
+    assert content._on_composer_key(content.composer, _enter()) is True
+
+    assert sent == ["first line\nsecond line"]
+    assert content.composer_text() == ""
+
+
+def test_the_composer_grows_to_ten_lines_then_scrolls():
+    from chinchilla.ui.panel import COMPOSER_MAX_LINES, PanelWindow
+
+    window = PanelWindow()
+    window.show_all()
+    content = window.content
+
+    def height() -> int:
+        import time
+
+        # the new size is applied on the next frame, not on the next event
+        deadline = time.monotonic() + 0.4
+        while time.monotonic() < deadline:
+            while Gtk.events_pending():
+                Gtk.main_iteration_do(False)
+            time.sleep(0.01)
+        return content.composer_scroll.get_allocated_height()
+
+    try:
+        one = height()
+        content.set_composer_text("\n".join(f"line {n}" for n in range(4)))
+        four = height()
+        content.set_composer_text("\n".join(f"line {n}" for n in range(30)))
+        thirty = height()
+    finally:
+        window.destroy()
+
+    assert four > one
+    assert thirty > four
+    # capped at about COMPOSER_MAX_LINES lines; the rest scrolls
+    assert thirty <= content.composer_scroll.get_max_content_height()
+    assert thirty < one * COMPOSER_MAX_LINES * 1.5
+
+
+def test_the_placeholder_hides_while_there_is_text():
+    from chinchilla.ui.panel import PanelContent
+
+    content = PanelContent()
+    content.show_all()
+    content.set_composer_text("hola")
+    assert content.placeholder.get_visible() is False
+    content.clear_composer()
+    assert content.placeholder.get_visible() is True
+
+
 def test_a_fenced_answer_renders_code_as_its_own_block():
     from chinchilla.ui.richtext import CodeBlock
 
@@ -471,6 +544,33 @@ def test_an_error_turn_is_plain_and_red():
 
     assert label.get_text() == "HTTP 500 **not markdown**"
     assert label.get_style_context().has_class("error-text")
+
+
+def test_the_placeholder_stays_hidden_over_a_draft_after_show_all():
+    from chinchilla.ui.panel import PanelWindow
+
+    window = PanelWindow()
+    window.show_all()
+    window.content.set_composer_text("draft question")
+    window.hide()
+    window.show_all()
+    try:
+        assert window.content.placeholder.get_visible() is False
+    finally:
+        window.destroy()
+
+
+def test_enter_that_confirms_an_input_method_does_not_send():
+    from chinchilla.ui.panel import PanelContent
+
+    sent = []
+    content = PanelContent(on_send=sent.append)
+    content.set_composer_text("にほ")
+    content.composer.im_context_filter_keypress = lambda _event: True
+
+    assert content._on_composer_key(content.composer, _enter()) is True
+    assert sent == []
+    assert content.composer_text() == "にほ"
 
 
 def test_streaming_only_rerenders_the_growing_block(monkeypatch):
