@@ -1064,13 +1064,13 @@ class PanelWindow(Gtk.Window):
             return True
         return False
 
-    def place(self, screen_width: int, screen_height: int, margin: int = 24) -> None:
+    def place(self, screen_width: int, screen_height: int, margin: int = 24) -> tuple[int, int]:
         height = int(screen_height * 0.72)
         self.resize(PANEL_WIDTH, height)
-        self.move(
-            max(0, screen_width - PANEL_WIDTH - margin),
-            max(0, (screen_height - height) // 2),
-        )
+        x = max(0, screen_width - PANEL_WIDTH - margin)
+        y = max(0, (screen_height - height) // 2)
+        self.move(x, y)
+        return x, y
 
     def parent_handle(self) -> str:
         """X11 handle for the portal, so it can attach its dialog to the panel."""
@@ -1084,8 +1084,8 @@ class PanelWindow(Gtk.Window):
             return ""
         return f"x11:{xid:#x}" if xid else ""
 
-    def show_at(self, screen_width: int, screen_height: int) -> None:
-        self.place(screen_width, screen_height)
+    def show_at(self, screen_width: int, screen_height: int) -> tuple[int, int]:
+        spot = self.place(screen_width, screen_height)
         self.show_all()
         self.present_with_time(Gdk.CURRENT_TIME)
         if system.is_mac():
@@ -1093,6 +1093,7 @@ class PanelWindow(Gtk.Window):
 
             cocoa.keep_visible(self)
         self.grab_focus()
+        return spot
 
 
 def _demo_capture() -> Path:

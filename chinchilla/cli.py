@@ -579,6 +579,9 @@ def cmd_settings(args: argparse.Namespace) -> int:
 
 
 def cmd_app(args: argparse.Namespace) -> int:
+    from .runtime import ensure_gdk_backend
+
+    ensure_gdk_backend()
     from .ui.app import run_app
 
     return run_app([])
@@ -597,6 +600,9 @@ def cmd_daemon(args: argparse.Namespace) -> int:
                 print("started the login agent (chinchilla shortcuts status)")
                 return 0
 
+    from .runtime import ensure_gdk_backend
+
+    ensure_gdk_backend()
     from .ui.app import run_app
 
     return run_app([], capture=False)

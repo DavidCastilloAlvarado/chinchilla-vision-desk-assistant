@@ -431,6 +431,19 @@ def test_flat_cuts_never_widen_the_panel(tmp_path, count):
     window.destroy()
 
 
+def test_show_at_re_anchors_the_panel_after_it_was_moved():
+    """A window manager that shuffles a hidden window must not win."""
+    from chinchilla.ui.panel import PANEL_WIDTH, PanelWindow
+
+    window = PanelWindow()
+    spot = window.show_at(1920, 1080)
+    window.hide()
+    window.move(0, 0)
+    again = window.show_at(1920, 1080)
+
+    assert spot == again == (1920 - PANEL_WIDTH - 24, (1080 - int(1080 * 0.72)) // 2)
+    window.destroy()
+
 
 def _enter(shift=False):
     from chinchilla.ui.gtk import Gdk

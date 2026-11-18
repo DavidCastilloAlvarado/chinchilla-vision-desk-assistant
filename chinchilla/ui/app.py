@@ -601,10 +601,17 @@ class App(Gtk.Application):
             from ..macos import cocoa
 
             cocoa.activate()
-        if not self.window.get_visible():
-            self.window.show_at(geometry.width, geometry.height)
-        else:
-            self.window.present_with_time(Gdk.CURRENT_TIME)
+        # placed on every show: a window manager that moved the panel while it
+        # was hidden would otherwise leave it wherever it decided
+        x, y = self.window.show_at(geometry.width, geometry.height)
+        LOGGER.info(
+            "panel at %s,%s on %s (%sx%s)",
+            x,
+            y,
+            display.get_name(),
+            geometry.width,
+            geometry.height,
+        )
         if self._clipboard_handoff():
             self._watch_clipboard()
 

@@ -319,6 +319,24 @@ def test_mac_never_forces_the_x11_backend(mac, monkeypatch):
     assert "GDK_BACKEND" not in os.environ
 
 
+def test_importing_the_ui_forces_the_x11_backend():
+    """The daemon and app commands import the UI eagerly; GDK must be pinned first."""
+    import subprocess
+
+    env = {key: value for key, value in os.environ.items() if key != "GDK_BACKEND"}
+    env.pop("CHINCHILLA_GDK_BACKEND", None)
+    env["DISPLAY"] = ":0"
+    env["WAYLAND_DISPLAY"] = "wayland-0"
+    script = "import os; from chinchilla.ui import gtk; print(os.environ.get('GDK_BACKEND'))"
+
+    result = subprocess.run(
+        [sys.executable, "-c", script], env=env, capture_output=True, text=True, timeout=120
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == ("x11" if system.is_linux() else "None")
+
+
 def test_mac_finds_an_installed_browser(mac, tmp_path, monkeypatch):
     from chinchilla.store import config
 
