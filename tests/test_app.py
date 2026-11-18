@@ -481,12 +481,15 @@ def test_mac_second_launch_hands_over_and_builds_nothing(xdg, monkeypatch):
     from pathlib import Path
 
     from chinchilla import instance, paths
+    from chinchilla.macos import hotkey
     from chinchilla.ui import app as app_module
 
     # AF_UNIX paths are limited to ~104 bytes on macOS, the xdg tmp path is not
     folder = Path(tempfile.mkdtemp(prefix="chin", dir="/tmp"))
     monkeypatch.setattr(paths, "socket_path", lambda: folder / "control.sock")
     monkeypatch.setattr(app_module.system, "is_mac", lambda: True)
+    # the real registration loads Carbon through ctypes, which only exists on macOS
+    monkeypatch.setattr(hotkey.GlobalHotkey, "register", lambda self, accelerator: None)
     forwarded: list[str] = []
     monkeypatch.setattr(instance, "forward", lambda command, path=None: forwarded.append(command) or True)
 
