@@ -309,6 +309,73 @@ def test_signed_out_credentials_cannot_start_a_session():
     assert "not signed in" in str(error.value)
 
 
+def _offline_api_github(routes: dict[str, object]):
+    """Mock transport where api.github.com does not resolve, like a broken DNS."""
+
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.host == "api.github.com":
+            raise httpx.ConnectError("[Errno 8] nodename nor servname provided, or not known")
+        for path, payload in routes.items():
+            if request.url.path == path:
+                return httpx.Response(200, json=payload)
+        return httpx.Response(404, json={"message": "no route"})
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), seen
+
+
+def test_an_unreachable_exchange_falls_back_to_the_github_token(tmp_path, monkeypatch):
+    path = tmp_path / "copilot.json"
+    monkeypatch.setattr(copilot.Credentials, "path", classmethod(lambda cls: path))
+    client, _seen = _offline_api_github({})
+    credentials = copilot.Credentials(github_token="gho_x", api="https://api.business.githubcopilot.com")
+
+    session = credentials.session(client=client)
+
+    assert session.direct is True
+    assert session.token == "gho_x"
+    assert session.api == "https://api.business.githubcopilot.com"
+    assert session.expires_in > copilot.DIRECT_TOKEN_SECONDS - 60
+    assert copilot.Credentials.load(path).token == "gho_x"
+
+
+def test_a_refused_exchange_is_not_hidden_by_the_fallback(tmp_path, monkeypatch):
+    monkeypatch.setattr(copilot.Credentials, "path", classmethod(lambda cls: tmp_path / "copilot.json"))
+    client, _seen = route({"/copilot_internal/v2/token": (403, {"message": "forbidden"})})
+
+    with pytest.raises(copilot.CopilotError) as error:
+        copilot.Credentials(github_token="gho_x").session(client=client)
+
+    assert "no Copilot subscription" in str(error.value)
+
+
+def test_the_login_finishes_when_api_github_is_unreachable(tmp_path, monkeypatch):
+    path = tmp_path / "copilot.json"
+    monkeypatch.setattr(copilot.Credentials, "path", classmethod(lambda cls: path))
+    client, seen = _offline_api_github(
+        {"/login/device/code": DEVICE, "/login/oauth/access_token": {"access_token": "gho_x"}}
+    )
+    events = []
+
+    credentials = copilot.login(
+        client=client,
+        sleep=lambda _s: None,
+        on_code=lambda _device: events.append("code"),
+        on_approved=lambda: events.append("approved"),
+    )
+
+    assert events == ["code", "approved"]
+    assert credentials.token == "gho_x"
+    assert credentials.login == ""
+    # only the exchange is attempted on the unreachable host, whoami is skipped
+    assert [request.url.path for request in seen if request.url.host == "api.github.com"] == [
+        "/copilot_internal/v2/token"
+    ]
+    assert copilot.Credentials.load(path).github_token == "gho_x"
+
+
 def test_the_provider_sends_the_copilot_headers(monkeypatch):
     credentials = copilot.Credentials(github_token="gho_x", token="tid=abc", expires_at=9_999_999_999)
     monkeypatch.setattr(copilot, "copilot_session", lambda *a, **k: pytest.fail("no refresh expected"))

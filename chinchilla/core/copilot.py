@@ -45,11 +45,17 @@ EDITOR_VERSION = "vscode/1.99.0"
 PLUGIN_VERSION = "copilot-chat/0.26.0"
 USER_AGENT = "GitHubCopilotChat/0.26.0"
 TOKEN_SAFETY_SECONDS = 120
+# how long the GitHub token is used as-is before the exchange is tried again
+DIRECT_TOKEN_SECONDS = 3600
 TIMEOUT = 30.0
 
 
 class CopilotError(ProviderError):
     """Login or Copilot API failure, with a message worth showing the user."""
+
+
+class CopilotUnreachable(CopilotError):
+    """The request never got an answer (DNS, proxy, offline)."""
 
 
 @dataclass
@@ -70,6 +76,8 @@ class CopilotSession:
     token: str
     api: str = API_FALLBACK
     expires_at: float = 0.0
+    # True when the GitHub token is used as-is because the exchange was unreachable
+    direct: bool = False
 
     @property
     def expires_in(self) -> float:
@@ -128,7 +136,7 @@ def _post_form(url: str, data: dict, client: httpx.Client | None = None) -> dict
         else:
             response = httpx.post(url, data=data, headers=headers, timeout=TIMEOUT)
     except httpx.HTTPError as exc:
-        raise CopilotError(f"cannot reach GitHub: {exc}") from exc
+        raise CopilotUnreachable(f"cannot reach GitHub: {exc}") from exc
     return _json(response)
 
 
@@ -139,7 +147,7 @@ def _get(url: str, headers: dict, client: httpx.Client | None = None) -> dict:
         else:
             response = httpx.get(url, headers=headers, timeout=TIMEOUT)
     except httpx.HTTPError as exc:
-        raise CopilotError(f"cannot reach GitHub: {exc}") from exc
+        raise CopilotUnreachable(f"cannot reach GitHub: {exc}") from exc
     return _json(response)
 
 
@@ -383,7 +391,18 @@ class Credentials:
             raise CopilotError("not signed in to GitHub Copilot")
         if not force and self.token and self.expires_at - TOKEN_SAFETY_SECONDS > time.time():
             return CopilotSession(token=self.token, api=self.api, expires_at=self.expires_at)
-        fresh = copilot_session(self.github_token, client=client)
+        try:
+            fresh = copilot_session(self.github_token, client=client)
+        except CopilotUnreachable as exc:
+            # api.github.com can be blocked (DNS, proxy) while the Copilot host is
+            # not; the Copilot API also accepts the GitHub token itself
+            LOGGER.warning("copilot token exchange unreachable, using the GitHub token: %s", exc)
+            fresh = CopilotSession(
+                token=self.github_token,
+                api=self.api or API_FALLBACK,
+                expires_at=time.time() + DIRECT_TOKEN_SECONDS,
+                direct=True,
+            )
         self.token = fresh.token
         self.api = fresh.api
         self.expires_at = fresh.expires_at
@@ -405,18 +424,24 @@ def login(
     sleep: Callable[[float], None] = time.sleep,
     on_code: Callable[[DeviceCode], None] | None = None,
     on_pending: Callable[[], None] | None = None,
+    on_approved: Callable[[], None] | None = None,
 ) -> Credentials:
     """Whole flow: show the code, wait for the browser, validate the seat."""
     device = start_device_flow(client=client)
     if on_code is not None:
         on_code(device)
     github_token = wait_for_token(device, client=client, sleep=sleep, on_pending=on_pending)
+    if on_approved is not None:
+        on_approved()
     credentials = Credentials(github_token=github_token)
-    try:
-        credentials.login = whoami(github_token, client=client)
-    except CopilotError as exc:  # cosmetic, never fail the login for it
-        LOGGER.warning("cannot read the GitHub login: %s", exc)
     session = credentials.session(client=client, force=True)
+    # whoami lives on the same host as the exchange; when that was unreachable
+    # it would only add another network timeout for a cosmetic name
+    if not session.direct:
+        try:
+            credentials.login = whoami(github_token, client=client)
+        except CopilotError as exc:  # cosmetic, never fail the login for it
+            LOGGER.warning("cannot read the GitHub login: %s", exc)
     credentials.token = session.token
     credentials.api = session.api
     credentials.expires_at = session.expires_at

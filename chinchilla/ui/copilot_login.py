@@ -111,7 +111,10 @@ class CopilotLoginDialog(Gtk.Dialog):
 
     def _worker(self) -> None:
         try:
-            credentials = self.login(on_code=lambda device: GLib.idle_add(self._show_code, device))
+            credentials = self.login(
+                on_code=lambda device: GLib.idle_add(self._show_code, device),
+                on_approved=lambda: GLib.idle_add(self._approved),
+            )
         except Exception as exc:  # every failure is shown in the dialog
             GLib.idle_add(self._failed, str(exc))
             return
@@ -122,6 +125,10 @@ class CopilotLoginDialog(Gtk.Dialog):
         self.verification_uri = device.verification_uri or copilot.VERIFICATION_URL
         self.page_label.set_text(self.verification_uri)
         self.status_label.set_text("waiting for the approval in the browser\u2026")
+        return False
+
+    def _approved(self) -> bool:
+        self.status_label.set_text("approved, finishing the sign-in\u2026")
         return False
 
     def _failed(self, message: str) -> bool:
