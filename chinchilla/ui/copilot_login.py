@@ -28,6 +28,7 @@ class CopilotLoginDialog(Gtk.Dialog):
         self.error = ""
         self.login = login or copilot.login
         self._started = False
+        self.verification_uri = copilot.VERIFICATION_URL
 
         box = self.get_content_area()
         box.set_spacing(10)
@@ -40,7 +41,7 @@ class CopilotLoginDialog(Gtk.Dialog):
         self.page_label = Gtk.Label()
         self.page_label.set_xalign(0)
         self.page_label.set_selectable(True)
-        self.page_label.set_text("https://github.com/login/device")
+        self.page_label.set_text(self.verification_uri)
         self.page_label.get_style_context().add_class("copilot-link")
         box.add(self.page_label)
 
@@ -86,7 +87,7 @@ class CopilotLoginDialog(Gtk.Dialog):
     def _open_page(self) -> None:
         window = self.get_transient_for()
         try:
-            Gtk.show_uri_on_window(window, copilot.DEVICE_CODE_URL.replace("/code", "/device"), 0)
+            Gtk.show_uri_on_window(window, self.verification_uri, 0)
         except GLib.Error:
             pass
 
@@ -110,7 +111,10 @@ class CopilotLoginDialog(Gtk.Dialog):
 
     def _worker(self) -> None:
         try:
-            credentials = self.login(on_code=lambda device: GLib.idle_add(self._show_code, device))
+            credentials = self.login(
+                on_code=lambda device: GLib.idle_add(self._show_code, device),
+                on_approved=lambda: GLib.idle_add(self._approved),
+            )
         except Exception as exc:  # every failure is shown in the dialog
             GLib.idle_add(self._failed, str(exc))
             return
@@ -118,8 +122,13 @@ class CopilotLoginDialog(Gtk.Dialog):
 
     def _show_code(self, device: copilot.DeviceCode) -> bool:
         self.code_label.set_text(device.user_code)
-        self.page_label.set_text(device.verification_uri)
+        self.verification_uri = device.verification_uri or copilot.VERIFICATION_URL
+        self.page_label.set_text(self.verification_uri)
         self.status_label.set_text("waiting for the approval in the browser\u2026")
+        return False
+
+    def _approved(self) -> bool:
+        self.status_label.set_text("approved, finishing the sign-in\u2026")
         return False
 
     def _failed(self, message: str) -> bool:

@@ -293,3 +293,22 @@ def test_the_login_dialog_starts_the_flow_and_closes_itself():
     assert dialog.credentials.login == "david"
     assert dialog.code_label.get_text() == "ABCD-1234"
     dialog.destroy()
+
+
+def test_the_open_button_goes_to_the_device_page(monkeypatch):
+    from chinchilla.core import copilot
+    from chinchilla.ui import copilot_login
+    from chinchilla.ui.copilot_login import CopilotLoginDialog
+
+    opened = []
+    monkeypatch.setattr(copilot_login.Gtk, "show_uri_on_window", lambda window, uri, stamp: opened.append(uri))
+
+    dialog = CopilotLoginDialog(login=lambda **_kwargs: copilot.Credentials())
+    dialog._open_page()
+    dialog._show_code(
+        copilot.DeviceCode(device_code="dev", user_code="ABCD-1234", verification_uri="https://github.com/login/device?x=1")
+    )
+    dialog._open_page()
+    dialog.destroy()
+
+    assert opened == ["https://github.com/login/device", "https://github.com/login/device?x=1"]

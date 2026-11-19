@@ -363,7 +363,7 @@ How it works, and what it writes:
 | Piece | Detail |
 | --- | --- |
 | sign-in | OAuth device flow (`github.com/login/device`, client id of the Copilot editor plugins, scope `read:user`) |
-| token | the GitHub token is traded for a short lived Copilot token (`api.github.com/copilot_internal/v2/token`) and refreshed automatically before it expires |
+| token | the GitHub token is traded for a short lived Copilot token (`api.github.com/copilot_internal/v2/token`) and refreshed automatically before it expires; when `api.github.com` cannot be reached (DNS, proxy) the GitHub token itself is sent to the Copilot host for an hour, then the exchange is tried again |
 | storage | `~/.config/chinchilla/copilot.json`, mode `0600`; the app never logs it and `chinchilla copilot logout` deletes it |
 | endpoint | `https://api.githubcopilot.com`, an OpenAI-compatible `/chat/completions` |
 | models | `GET /models`, filtered to the ones served on `/chat/completions` (the GPT-5-and-later and grok models are `/responses` only and would answer every turn with a 400) |
