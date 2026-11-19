@@ -32,6 +32,7 @@ LOGGER = log.get("copilot")
 # the OAuth app the Copilot editor plugins use; it only asks for read:user
 CLIENT_ID = "Iv1.b507a08c87ecfe98"
 DEVICE_CODE_URL = "https://github.com/login/device/code"
+VERIFICATION_URL = "https://github.com/login/device"
 ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 COPILOT_TOKEN_URL = "https://api.github.com/copilot_internal/v2/token"
 USER_URL = "https://api.github.com/user"
@@ -172,7 +173,7 @@ def start_device_flow(client: httpx.Client | None = None) -> DeviceCode:
     return DeviceCode(
         device_code=str(payload["device_code"]),
         user_code=str(payload["user_code"]),
-        verification_uri=str(payload.get("verification_uri") or "https://github.com/login/device"),
+        verification_uri=str(payload.get("verification_uri") or VERIFICATION_URL),
         interval=float(payload.get("interval") or 5),
         expires_in=float(payload.get("expires_in") or 900),
     )
